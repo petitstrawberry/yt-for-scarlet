@@ -8,8 +8,16 @@ members = [
 ]
 
 [workspace.dependencies]
-scarlet-std = { git = "https://github.com/petitstrawberry/Scarlet", subdirectory = "user/lib/std", features = ["alloc_debug"] }
-scarlet-ui = { git = "https://github.com/petitstrawberry/Scarlet", subdirectory = "user/lib/scarlet-ui", default-features = false, features = ["legacy-scarlet-std"] }
-scarlet-ui-macros = { git = "https://github.com/petitstrawberry/Scarlet", subdirectory = "user/lib/scarlet-ui-macros" }
 scarlet-youtube = { path = "scarlet-youtube" }
 scarlet-youtube-net = { path = "scarlet-youtube-net" }
+scarlet-ui = { git = "https://github.com/petitstrawberry/Scarlet", package = "scarlet-ui", default-features = false, features = ["std"] }
+scarlet-ui-macros = { git = "https://github.com/petitstrawberry/Scarlet", package = "scarlet-ui-macros" }
+
+[patch.crates-io]
+ring = { path = "vendor/ring" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
