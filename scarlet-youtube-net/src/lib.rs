@@ -1674,9 +1674,11 @@ fn plain_http_get(
         }
         body.truncate(content_length);
     } else {
-        socket
-            .set_read_timeout(Some(Duration::from_nanos(500_000_000)))
-            .map_err(|_| String::from("failed to set HTTP read timeout"))?;
+        set_read_timeout_if_supported(
+            &socket,
+            Duration::from_nanos(500_000_000),
+            "failed to set HTTP read timeout",
+        )?;
         loop {
             let mut chunk = [0u8; 8192];
             match socket.read(&mut chunk) {
@@ -3446,9 +3448,19 @@ fn is_redirect(status: u16) -> bool {
 
 fn wait_readable(socket: &TcpStream, timeout_ns: i64) -> Result<(), String> {
     let timeout = Duration::from_nanos(timeout_ns.max(0) as u64);
-    socket
-        .set_read_timeout(Some(timeout))
-        .map_err(|_| String::from("failed to set network read timeout"))
+    set_read_timeout_if_supported(socket, timeout, "failed to set network read timeout")
+}
+
+fn set_read_timeout_if_supported(
+    socket: &TcpStream,
+    timeout: Duration,
+    context: &str,
+) -> Result<(), String> {
+    match socket.set_read_timeout(Some(timeout)) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == ErrorKind::Unsupported => Ok(()),
+        Err(_) => Err(String::from(context)),
+    }
 }
 
 fn write_all<W: Write>(writer: &mut W, mut data: &[u8], context: &str) -> Result<(), String> {
