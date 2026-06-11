@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = [
+    "scarlet-youtube",
+    "scarlet-youtube-net",
+    "yt",
+    "yt-gui",
+]
+
+[workspace.dependencies]
+scarlet-std = { git = "https://github.com/petitstrawberry/Scarlet", subdirectory = "user/lib/std", features = ["alloc_debug"] }
+scarlet-ui = { git = "https://github.com/petitstrawberry/Scarlet", subdirectory = "user/lib/scarlet-ui", default-features = false, features = ["legacy-scarlet-std"] }
+scarlet-ui-macros = { git = "https://github.com/petitstrawberry/Scarlet", subdirectory = "user/lib/scarlet-ui-macros" }
+scarlet-youtube = { path = "scarlet-youtube" }
+scarlet-youtube-net = { path = "scarlet-youtube-net" }

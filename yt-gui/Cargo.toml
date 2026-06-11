@@ -1,0 +1,16 @@
+[package]
+name = "yt-gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+scarlet-std = { workspace = true }
+scarlet-youtube-net = { workspace = true }
+scarlet-ui = { workspace = true }
+scarlet-ui-macros = { workspace = true }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
