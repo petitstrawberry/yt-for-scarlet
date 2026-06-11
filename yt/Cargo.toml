@@ -4,11 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-scarlet-std = { workspace = true }
 scarlet-youtube-net = { workspace = true }
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"

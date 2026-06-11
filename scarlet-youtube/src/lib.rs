@@ -1,11 +1,3 @@
-#![no_std]
-
-extern crate alloc;
-
-use alloc::format;
-use alloc::string::String;
-use alloc::vec::Vec;
-
 #[derive(Clone)]
 pub struct YoutubeSearchResult {
     pub video_id: String,

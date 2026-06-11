@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-scarlet-std = { workspace = true }
 scarlet-youtube = { workspace = true }
-getrandom = { version = "0.2", default-features = false, features = ["custom"] }
-ring = { version = "0.17", default-features = false, features = ["alloc", "less-safe-getrandom-custom-or-rdrand"] }
+scarlet-os = { git = "https://github.com/petitstrawberry/Scarlet", package = "scarlet-os" }
+getrandom = { version = "0.2", features = ["custom"] }
+ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

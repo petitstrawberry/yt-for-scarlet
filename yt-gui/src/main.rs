@@ -1,13 +1,9 @@
-#![no_std]
-#![no_main]
-
-extern crate alloc;
-extern crate scarlet_std as std;
 extern crate scarlet_ui_macros;
 
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use core::f32;
+use std::f32;
+use std::process::{Command, exit};
+use std::sync::Mutex;
+use std::thread;
 
 use scarlet_ui::views::ImageFit;
 use scarlet_ui::{
@@ -17,11 +13,6 @@ use scarlet_ui_macros::View;
 use scarlet_youtube_net::{
     YoutubeSearchCursor, YoutubeVideoDetails, fetch_youtube_thumbnail_bytes, youtube_video_details,
 };
-
-use std::sync::Mutex;
-use std::task::{execve, exit, fork};
-use std::thread;
-use std::{env, format, println};
 
 const PAGE_SIZE: usize = 8;
 const THUMB_WIDTH: u32 = 160;
@@ -117,7 +108,7 @@ enum GuiMessage {
     DetailsFinished {
         generation: u64,
         video_id: String,
-        result: core::result::Result<GuiVideoDetails, String>,
+        result: std::result::Result<GuiVideoDetails, String>,
     },
 }
 
@@ -132,7 +123,7 @@ struct SearchLoadError {
     cursor: Option<YoutubeSearchCursor>,
 }
 
-type SearchLoadOutcome = core::result::Result<SearchLoadResult, SearchLoadError>;
+type SearchLoadOutcome = std::result::Result<SearchLoadResult, SearchLoadError>;
 
 static YT_GUI_GENERATION: Mutex<u64> = Mutex::new(0);
 static YT_GUI_MESSAGES: Mutex<Vec<GuiMessage>> = Mutex::new(Vec::new());
@@ -311,7 +302,7 @@ impl Application for YtGuiApp {
                         .font_size(20.0)
                         .color(Color::rgb(24u8, 28u8, 34u8))
                         .frame_width(92.0),
-                    TextField::new(self.query.clone(), self.search_focused.clone())
+                    TextField::new(self.query.clone())
                         .placeholder("Search YouTube")
                         .font_size(14.0)
                         .padding(8.0)
@@ -488,7 +479,8 @@ impl YtGuiApp {
                 match result {
                     Ok(load) => {
                         let count = load.results.len();
-                        *YT_GUI_SEARCH_CURSOR.lock() = Some(load.cursor);
+                        *YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned") =
+                            Some(load.cursor);
                         self.results.set(load.results);
                         self.selected.set(0);
                         self.page.set(0);
@@ -513,7 +505,7 @@ impl YtGuiApp {
                         );
                     }
                     Err(error) => {
-                        *YT_GUI_SEARCH_CURSOR.lock() = None;
+                        *YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned") = None;
                         self.results.set(Vec::new());
                         self.selected.set(0);
                         self.page.set(0);
@@ -539,7 +531,8 @@ impl YtGuiApp {
                         let added = load.results.len();
                         list.extend(load.results);
                         let len = list.len();
-                        *YT_GUI_SEARCH_CURSOR.lock() = Some(load.cursor);
+                        *YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned") =
+                            Some(load.cursor);
                         self.results.set(list);
                         self.has_more.set(load.has_more);
 
@@ -574,7 +567,8 @@ impl YtGuiApp {
                     }
                     Err(error) => {
                         if let Some(cursor) = error.cursor {
-                            *YT_GUI_SEARCH_CURSOR.lock() = Some(cursor);
+                            *YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned") =
+                                Some(cursor);
                         }
                         self.status
                             .set(format!("Search continuation failed: {}", error.message));
@@ -596,7 +590,9 @@ impl YtGuiApp {
                 }
             }
             GuiMessage::ThumbnailBatchFinished { generation } => {
-                *YT_GUI_THUMBNAIL_ACTIVE.lock() = false;
+                *YT_GUI_THUMBNAIL_ACTIVE
+                    .lock()
+                    .expect("yt gui mutex poisoned") = false;
                 if generation != current_generation() {
                     return;
                 }
@@ -612,7 +608,7 @@ impl YtGuiApp {
                 video_id,
                 result,
             } => {
-                *YT_GUI_DETAILS_ACTIVE.lock() = false;
+                *YT_GUI_DETAILS_ACTIVE.lock().expect("yt gui mutex poisoned") = false;
                 if generation != current_generation() {
                     return;
                 }
@@ -740,7 +736,7 @@ fn perform_search(
     has_more.set(false);
     loading_more.set(true);
     details.set(DetailState::Empty);
-    *YT_GUI_SEARCH_CURSOR.lock() = None;
+    *YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned") = None;
     status.set(format!("Searching: {}", query_text));
     println!("[yt-gui] searching: {}", query_text);
     thread::spawn(move || {
@@ -766,18 +762,13 @@ fn play_selected(
     let title = row.title.clone();
     status.set(format!("Starting playback: {}", title));
     println!("[yt-gui] spawn: yt --title <title> {}", url);
-    let child = fork();
-    if child < 0 {
-        status.set(String::from("failed to fork /bin/yt"));
-        return;
+    match Command::new("/bin/yt")
+        .args(["--title", &title, &url])
+        .spawn()
+    {
+        Ok(_child) => status.set(format!("Playback started: {}", title)),
+        Err(_) => status.set(String::from("failed to start /bin/yt")),
     }
-    if child == 0 {
-        let argv = ["yt", "--title", title.as_str(), url.as_str()];
-        let rc = execve("/bin/yt", &argv, &[]);
-        println!("[yt-gui] failed to exec /bin/yt: {}", rc);
-        exit(1);
-    }
-    status.set(format!("Playback started: {}", title));
 }
 
 fn move_selection(
@@ -889,7 +880,7 @@ fn load_more_search_results(
     }
     let generation = current_generation();
     let cursor = {
-        let mut cursor = YT_GUI_SEARCH_CURSOR.lock();
+        let mut cursor = YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned");
         cursor.take()
     };
     let Some(cursor) = cursor else {
@@ -908,7 +899,7 @@ fn load_more_search_results(
     });
 }
 
-fn gui_search_result(result: scarlet_youtube::YoutubeSearchResult) -> GuiSearchResult {
+fn gui_search_result(result: scarlet_youtube_net::YoutubeSearchResult) -> GuiSearchResult {
     GuiSearchResult {
         video_id: result.video_id,
         title: result.title,
@@ -933,7 +924,9 @@ fn request_visible_thumbnails(
     generation: u64,
 ) {
     {
-        let mut active = YT_GUI_THUMBNAIL_ACTIVE.lock();
+        let mut active = YT_GUI_THUMBNAIL_ACTIVE
+            .lock()
+            .expect("yt gui mutex poisoned");
         if *active {
             return;
         }
@@ -957,7 +950,9 @@ fn request_visible_thumbnails(
     }
 
     if requests.is_empty() {
-        *YT_GUI_THUMBNAIL_ACTIVE.lock() = false;
+        *YT_GUI_THUMBNAIL_ACTIVE
+            .lock()
+            .expect("yt gui mutex poisoned") = false;
         return;
     }
 
@@ -1004,7 +999,7 @@ fn request_selected_details(
         return;
     }
     {
-        let mut active = YT_GUI_DETAILS_ACTIVE.lock();
+        let mut active = YT_GUI_DETAILS_ACTIVE.lock().expect("yt gui mutex poisoned");
         if *active {
             return;
         }
@@ -1039,27 +1034,30 @@ fn detail_state_matches_video(state: &DetailState, video_id: &str) -> bool {
     }
 }
 
-fn download_thumbnail_image(video_id: &str) -> core::result::Result<BitmapImage, String> {
+fn download_thumbnail_image(video_id: &str) -> std::result::Result<BitmapImage, String> {
     let bytes = fetch_youtube_thumbnail_bytes(video_id)?;
     BitmapImage::from_jpeg_bytes(&bytes).ok_or_else(|| String::from("thumbnail JPEG decode failed"))
 }
 
 fn next_generation() -> u64 {
-    let mut generation = YT_GUI_GENERATION.lock();
+    let mut generation = YT_GUI_GENERATION.lock().expect("yt gui mutex poisoned");
     *generation = generation.saturating_add(1);
     *generation
 }
 
 fn current_generation() -> u64 {
-    *YT_GUI_GENERATION.lock()
+    *YT_GUI_GENERATION.lock().expect("yt gui mutex poisoned")
 }
 
 fn push_gui_message(message: GuiMessage) {
-    YT_GUI_MESSAGES.lock().push(message);
+    YT_GUI_MESSAGES
+        .lock()
+        .expect("yt gui mutex poisoned")
+        .push(message);
 }
 
 fn pop_gui_message() -> Option<GuiMessage> {
-    let mut messages = YT_GUI_MESSAGES.lock();
+    let mut messages = YT_GUI_MESSAGES.lock().expect("yt gui mutex poisoned");
     if messages.is_empty() {
         None
     } else {
@@ -1164,7 +1162,7 @@ fn push_wrapped_word(lines: &mut Vec<String>, current: &mut String, word: &str) 
         if current.is_empty() || text_fits_detail_width(&candidate) {
             current.push(ch);
         } else {
-            lines.push(core::mem::take(current));
+            lines.push(std::mem::take(current));
             current.push(ch);
         }
     }
@@ -1244,7 +1242,7 @@ fn detail_pane_text(
 }
 
 fn initial_query() -> String {
-    let args = env::args_vec();
+    let args: Vec<String> = std::env::args().collect();
     let mut query = String::new();
     for arg in args.iter().skip(1) {
         if !query.is_empty() {
@@ -1255,8 +1253,7 @@ fn initial_query() -> String {
     query
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn main() {
+fn main() {
     println!("[yt-gui] Starting YouTube GUI");
 
     let mut app = YtGuiApp::new(initial_query());

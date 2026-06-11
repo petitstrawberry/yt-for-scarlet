@@ -1,43 +1,27 @@
-#![no_std]
+use std::env;
+use std::fs::{File, OpenOptions, remove_file};
+use std::io::{ErrorKind, Read, Write, stdin, stdout};
+use std::mem::ManuallyDrop;
+use std::net::TcpStream;
+use std::num::NonZeroU32;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
-extern crate alloc;
-extern crate getrandom;
-extern crate rustls;
-extern crate scarlet_std as std;
-
-use alloc::format;
-use alloc::string::{String, ToString};
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
-use core::mem::ManuallyDrop;
-use core::num::NonZeroU32;
-use core::time::Duration;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::time_provider::TimeProvider;
 use rustls::unbuffered::ConnectionState;
 use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme};
-use std::env;
-use std::fs::{File, OpenOptions, remove_file};
-use std::handle::Handle;
-use std::io::{ErrorKind, Read, Write, stdin, stdout};
-use std::network::list_interfaces;
-use std::poll::{POLLIN, PollHandle, poll};
-use std::println;
-use std::socket::{Inet4SocketAddress, Socket, SocketDomain, SocketProtocol, SocketType};
-use std::sync::Mutex;
-use std::task::{execve, exit, fork, getpid, waitpid};
-use std::thread;
-use std::tty::{KeyboardMode, ReadPolicy, Terminal, TerminalSettings};
+use scarlet_os::Handle;
+use scarlet_os::handle::capability::StreamError;
+use scarlet_os::socket::Socket;
 
 pub use scarlet_youtube::YoutubeSearchResult;
 
-const DEFAULT_DNS: [u8; 4] = [10, 0, 2, 3];
-const DNS_PORT: u16 = 53;
 const HTTP_PORT: u16 = 80;
 const HTTPS_PORT: u16 = 443;
-const DNS_TIMEOUT_NS: i64 = 5_000_000_000;
 const HTTP_TIMEOUT_NS: i64 = 10_000_000_000;
 const TLS_TIMEOUT_NS: i64 = 60_000_000_000;
 const MAX_REDIRECTS: usize = 8;
@@ -117,11 +101,8 @@ pub fn youtube_thumbnail_url(video_id: &str) -> String {
 /// JPEG bytes for the thumbnail.
 pub fn fetch_youtube_thumbnail_bytes(video_id: &str) -> Result<Vec<u8>, String> {
     let url = youtube_thumbnail_url(video_id);
-    let bytes = fetch_url_bytes_with_headers(
-        &url,
-        DEFAULT_USER_AGENT,
-        "Accept: image/jpeg,*/*\r\n",
-    )?;
+    let bytes =
+        fetch_url_bytes_with_headers(&url, DEFAULT_USER_AGENT, "Accept: image/jpeg,*/*\r\n")?;
     if !bytes.starts_with(&[0xff, 0xd8]) {
         return Err(format!(
             "thumbnail response is not JPEG: len={} prefix={}",
@@ -306,17 +287,7 @@ getrandom::register_custom_getrandom!(scarlet_getrandom);
 
 fn scarlet_getrandom(dest: &mut [u8]) -> Result<(), getrandom::Error> {
     let mut file = File::open("/dev/random").map_err(|_| custom_getrandom_error())?;
-    let mut offset = 0usize;
-    while offset < dest.len() {
-        let n = file
-            .read(&mut dest[offset..])
-            .map_err(|_| custom_getrandom_error())?;
-        if n == 0 {
-            return Err(custom_getrandom_error());
-        }
-        offset += n;
-    }
-    Ok(())
+    file.read_exact(dest).map_err(|_| custom_getrandom_error())
 }
 
 fn custom_getrandom_error() -> getrandom::Error {
@@ -357,7 +328,7 @@ pub fn run_cli() -> isize {
 }
 
 fn run() -> Result<(), String> {
-    let args = env::args_vec();
+    let args = env::args().collect::<Vec<String>>();
     if args.len() < 2 {
         print_usage();
         return Ok(());
@@ -498,7 +469,7 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
 
-    let rc = if let Some(audio) = audio_output.as_ref() {
+    if let Some(audio) = audio_output.as_ref() {
         println!(
             "[yt] exec: video_player --hwdc {} --audio {}{}{}",
             output,
@@ -520,7 +491,7 @@ fn run() -> Result<(), String> {
         if loop_playback {
             argv.push("--loop");
         }
-        execve("/bin/video_player", &argv, &[])
+        run_video_player(&argv)
     } else {
         println!(
             "[yt] exec: video_player --hwdc {}{}{}",
@@ -536,9 +507,23 @@ fn run() -> Result<(), String> {
         if loop_playback {
             argv.push("--loop");
         }
-        execve("/bin/video_player", &argv, &[])
-    };
-    Err(format!("failed to exec /bin/video_player: {}", rc))
+        run_video_player(&argv)
+    }
+}
+
+fn run_video_player(argv: &[&str]) -> Result<(), String> {
+    let status = Command::new("/bin/video_player")
+        .args(argv.iter().skip(1))
+        .status()
+        .map_err(|err| format!("failed to start /bin/video_player: {}", err))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "video_player exited with status {}",
+            status.code().unwrap_or(1)
+        ))
+    }
 }
 
 fn parse_input_or_search_query(positional: &[String]) -> Result<String, String> {
@@ -591,35 +576,28 @@ fn stream_media_pair_and_play(
 
     let video_listener = prepare_stream_socket(&video_socket_path)?;
 
-    let child = fork();
-    if child < 0 {
-        return Err(String::from("failed to fork video_player"));
+    println!(
+        "[yt] exec: video_player --hwdc --stream-socket {} --audio {}{}",
+        video_socket_path,
+        stream_audio_output,
+        player_title.as_ref().map_or("", |_| " --title <title>")
+    );
+    let mut command = Command::new("/bin/video_player");
+    command.args([
+        "--hwdc",
+        "--stream",
+        "--stream-socket",
+        video_socket_path.as_str(),
+        "--audio",
+        stream_audio_output.as_str(),
+        video_output.as_str(),
+    ]);
+    if let Some(title) = player_title.as_deref() {
+        command.args(["--title", title]);
     }
-    if child == 0 {
-        println!(
-            "[yt] exec: video_player --hwdc --stream-socket {} --audio {}{}",
-            video_socket_path,
-            stream_audio_output,
-            player_title.as_ref().map_or("", |_| " --title <title>")
-        );
-        let mut argv = vec![
-            "video_player",
-            "--hwdc",
-            "--stream",
-            "--stream-socket",
-            video_socket_path.as_str(),
-            "--audio",
-            stream_audio_output.as_str(),
-            video_output.as_str(),
-        ];
-        if let Some(title) = player_title.as_deref() {
-            argv.push("--title");
-            argv.push(title);
-        }
-        let rc = execve("/bin/video_player", &argv, &[]);
-        println!("[yt] failed to exec /bin/video_player: {}", rc);
-        exit(1);
-    }
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("failed to start video_player: {}", err))?;
 
     let download_result = match accept_stream_socket(&video_listener, &video_socket_path) {
         Ok(video_stream) => {
@@ -636,16 +614,21 @@ fn stream_media_pair_and_play(
     };
     let _ = remove_file(&video_socket_path);
 
-    let (_pid, status) = waitpid(child, 0);
+    let status = child
+        .wait()
+        .map_err(|err| format!("failed to wait for video_player: {}", err))?;
     if let Err(error) = download_result {
-        if status == 0 && is_media_stream_closed_by_player(&error) {
+        if status.success() && is_media_stream_closed_by_player(&error) {
             println!("[yt] video_player closed; stopped media stream");
             return Ok(());
         }
         return Err(error);
     }
-    if status != 0 {
-        return Err(format!("video_player exited with status {}", status));
+    if !status.success() {
+        return Err(format!(
+            "video_player exited with status {}",
+            status.code().unwrap_or(1)
+        ));
     }
     Ok(())
 }
@@ -688,8 +671,8 @@ fn fetch_media_pair_to_files_with_markers(
     extra_headers: &'static str,
 ) -> Result<(), String> {
     println!("[yt] downloading DASH video/audio concurrently");
-    let video_result = Arc::new(Mutex::new(None));
-    let audio_result = Arc::new(Mutex::new(None));
+    let video_result: Arc<Mutex<Option<Result<(), String>>>> = Arc::new(Mutex::new(None));
+    let audio_result: Arc<Mutex<Option<Result<(), String>>>> = Arc::new(Mutex::new(None));
 
     let video_result_writer = video_result.clone();
     let video_output_writer = video_output.clone();
@@ -705,12 +688,16 @@ fn fetch_media_pair_to_files_with_markers(
             println!("[yt] saved {}", video_output_writer);
             if let Some(marker) = video_complete {
                 if let Err(err) = touch_file(&marker) {
-                    *video_result_writer.lock() = Some(Err(err));
+                    if let Ok(mut guard) = video_result_writer.lock() {
+                        *guard = Some(Err(err));
+                    }
                     return;
                 }
             }
         }
-        *video_result_writer.lock() = Some(result);
+        if let Ok(mut guard) = video_result_writer.lock() {
+            *guard = Some(result);
+        }
     });
 
     let audio_result_writer = audio_result.clone();
@@ -727,27 +714,33 @@ fn fetch_media_pair_to_files_with_markers(
             println!("[yt] saved {}", audio_output_writer);
             if let Some(marker) = audio_complete {
                 if let Err(err) = touch_file(&marker) {
-                    *audio_result_writer.lock() = Some(Err(err));
+                    if let Ok(mut guard) = audio_result_writer.lock() {
+                        *guard = Some(Err(err));
+                    }
                     return;
                 }
             }
         }
-        *audio_result_writer.lock() = Some(result);
+        if let Ok(mut guard) = audio_result_writer.lock() {
+            *guard = Some(result);
+        }
     });
 
     video_handle
         .join()
-        .map_err(|err| format!("video download thread failed: {}", err))?;
+        .map_err(|err| format!("video download thread failed: {:?}", err))?;
     audio_handle
         .join()
-        .map_err(|err| format!("audio download thread failed: {}", err))?;
+        .map_err(|err| format!("audio download thread failed: {:?}", err))?;
 
     video_result
         .lock()
+        .map_err(|_| String::from("video download result lock failed"))?
         .take()
         .unwrap_or_else(|| Err(String::from("video download did not finish")))?;
     audio_result
         .lock()
+        .map_err(|_| String::from("audio download result lock failed"))?
         .take()
         .unwrap_or_else(|| Err(String::from("audio download did not finish")))?;
     Ok(())
@@ -756,7 +749,7 @@ fn fetch_media_pair_to_files_with_markers(
 fn stream_socket_path(path: &str, kind: &str) -> String {
     format!(
         "/tmp/scarlet-yt-{}-{}-{}.sock",
-        getpid(),
+        std::process::id(),
         kind,
         path_basename(path)
     )
@@ -765,7 +758,7 @@ fn stream_socket_path(path: &str, kind: &str) -> String {
 fn stream_file_path(path: &str, kind: &str) -> String {
     format!(
         "/tmp/scarlet-yt-{}-{}-{}",
-        getpid(),
+        std::process::id(),
         kind,
         path_basename(path)
     )
@@ -879,7 +872,7 @@ fn print_youtube_search_tui(
     results: &[YoutubeSearchResult],
     selected: usize,
 ) -> Result<(), String> {
-    let out = stdout();
+    let mut out = stdout();
     out.write_all(b"\x1b[2J\x1b[H")
         .map_err(|_| String::from("failed to draw search UI"))?;
     out.flush()
@@ -916,37 +909,38 @@ fn print_youtube_search_tui(
 
 struct SearchRawMode {
     handle: ManuallyDrop<Handle>,
-    saved_settings: Option<TerminalSettings>,
+    saved_settings: Option<SearchTerminalSettings>,
+}
+
+#[derive(Clone, Copy)]
+struct SearchTerminalSettings {
+    echo: bool,
+    canonical: bool,
+    signal_chars: bool,
+    keyboard_mode: i32,
+    read_policy: i32,
 }
 
 impl SearchRawMode {
     fn enter() -> Result<Self, String> {
-        // SAFETY: handle 0 is the process stdin. Store it in ManuallyDrop so
-        // this temporary control view never closes the real stdin descriptor.
         let handle =
             unsafe { Handle::from_raw(0) }.map_err(|_| String::from("stdin is not a valid TTY"))?;
         let mut guard = Self {
             handle: ManuallyDrop::new(handle),
             saved_settings: None,
         };
-        let terminal = Terminal::from_handle(&guard.handle);
-        let saved_settings = terminal.settings().ok();
-        terminal
-            .set_canonical(false)
+        let saved_settings = search_terminal_settings(&guard.handle).ok();
+        tty_set_bool(&guard.handle, SCTL_TTY_SET_CANONICAL, false)
             .map_err(|_| String::from("failed to enter TTY raw mode"))?;
-        terminal
-            .set_echo(false)
+        tty_set_bool(&guard.handle, SCTL_TTY_SET_ECHO, false)
             .map_err(|_| String::from("failed to disable TTY echo"))?;
-        terminal
-            .set_signal_chars_enabled(false)
+        tty_set_bool(&guard.handle, SCTL_TTY_SET_SIGNAL_CHARS, false)
             .map_err(|_| String::from("failed to disable TTY signal chars"))?;
-        terminal
-            .set_keyboard_mode(KeyboardMode::Xlate)
+        tty_control(&guard.handle, SCTL_TTY_SET_KBMODE, 0)
             .map_err(|_| String::from("failed to set TTY keyboard mode"))?;
-        terminal
-            .set_read_policy(ReadPolicy::new(1, 0))
+        tty_control(&guard.handle, SCTL_TTY_SET_READ_POLICY, 1)
             .map_err(|_| String::from("failed to set TTY read policy"))?;
-        let _ = terminal.flush_input();
+        let _ = tty_control(&guard.handle, SCTL_TTY_FLUSH_INPUT, 0);
         guard.saved_settings = saved_settings;
         Ok(guard)
     }
@@ -955,9 +949,61 @@ impl SearchRawMode {
 impl Drop for SearchRawMode {
     fn drop(&mut self) {
         if let Some(settings) = self.saved_settings {
-            let _ = Terminal::from_handle(&self.handle).apply_settings(settings);
+            let _ = apply_search_terminal_settings(&self.handle, settings);
         }
     }
+}
+
+const SCTL_TTY_SET_ECHO: u32 = 0x5354_0001;
+const SCTL_TTY_GET_ECHO: u32 = 0x5354_0002;
+const SCTL_TTY_SET_CANONICAL: u32 = 0x5354_0003;
+const SCTL_TTY_GET_CANONICAL: u32 = 0x5354_0004;
+const SCTL_TTY_SET_READ_POLICY: u32 = 0x5354_0007;
+const SCTL_TTY_GET_READ_POLICY: u32 = 0x5354_0008;
+const SCTL_TTY_FLUSH_INPUT: u32 = 0x5354_0009;
+const SCTL_TTY_SET_KBMODE: u32 = 0x5354_000C;
+const SCTL_TTY_GET_KBMODE: u32 = 0x5354_000D;
+const SCTL_TTY_SET_SIGNAL_CHARS: u32 = 0x5354_0010;
+const SCTL_TTY_GET_SIGNAL_CHARS: u32 = 0x5354_0011;
+
+fn search_terminal_settings(handle: &Handle) -> Result<SearchTerminalSettings, String> {
+    Ok(SearchTerminalSettings {
+        echo: tty_get_bool(handle, SCTL_TTY_GET_ECHO)?,
+        canonical: tty_get_bool(handle, SCTL_TTY_GET_CANONICAL)?,
+        signal_chars: tty_get_bool(handle, SCTL_TTY_GET_SIGNAL_CHARS)?,
+        keyboard_mode: tty_control(handle, SCTL_TTY_GET_KBMODE, 0)?,
+        read_policy: tty_control(handle, SCTL_TTY_GET_READ_POLICY, 0)?,
+    })
+}
+
+fn apply_search_terminal_settings(
+    handle: &Handle,
+    settings: SearchTerminalSettings,
+) -> Result<(), String> {
+    tty_set_bool(handle, SCTL_TTY_SET_ECHO, settings.echo)?;
+    tty_set_bool(handle, SCTL_TTY_SET_CANONICAL, settings.canonical)?;
+    tty_set_bool(handle, SCTL_TTY_SET_SIGNAL_CHARS, settings.signal_chars)?;
+    tty_control(handle, SCTL_TTY_SET_KBMODE, settings.keyboard_mode as usize)?;
+    tty_control(
+        handle,
+        SCTL_TTY_SET_READ_POLICY,
+        settings.read_policy as usize,
+    )?;
+    Ok(())
+}
+
+fn tty_get_bool(handle: &Handle, command: u32) -> Result<bool, String> {
+    tty_control(handle, command, 0).map(|value| value != 0)
+}
+
+fn tty_set_bool(handle: &Handle, command: u32, enabled: bool) -> Result<(), String> {
+    tty_control(handle, command, enabled as usize).map(|_| ())
+}
+
+fn tty_control(handle: &Handle, command: u32, arg: usize) -> Result<i32, String> {
+    handle
+        .control(command, arg)
+        .map_err(|_| String::from("TTY control failed"))
 }
 
 enum SearchKey {
@@ -972,7 +1018,7 @@ enum SearchKey {
 }
 
 fn read_search_key() -> Result<SearchKey, String> {
-    let input = stdin();
+    let mut input = stdin();
     let mut byte = [0u8; 1];
     loop {
         input
@@ -994,7 +1040,7 @@ fn read_search_key() -> Result<SearchKey, String> {
 }
 
 fn read_search_escape_key() -> Result<SearchKey, String> {
-    let input = stdin();
+    let mut input = stdin();
     let mut seq = [0u8; 2];
     input
         .read(&mut seq[0..1])
@@ -1023,7 +1069,7 @@ fn read_search_escape_key() -> Result<SearchKey, String> {
 }
 
 fn consume_escape_tilde() {
-    let input = stdin();
+    let mut input = stdin();
     let mut byte = [0u8; 1];
     let _ = input.read(&mut byte);
 }
@@ -1197,7 +1243,10 @@ fn fetch_youtube_search_initial(
         &extra_headers,
     )?;
     if response.status < 200 || response.status >= 300 {
-        return Err(format!("YouTube search API HTTP status {}", response.status));
+        return Err(format!(
+            "YouTube search API HTTP status {}",
+            response.status
+        ));
     }
     core::str::from_utf8(&response.body)
         .map(|text| text.to_string())
@@ -1320,7 +1369,13 @@ fn fetch_thumbnail_batch(manifest_path: &str) -> Result<(), String> {
             .next()
             .ok_or_else(|| String::from("thumbnail manifest missing output path"))?;
         let done = fields.next();
-        match fetch_url_to_file(url, output, false, DEFAULT_USER_AGENT, DEFAULT_EXTRA_HEADERS) {
+        match fetch_url_to_file(
+            url,
+            output,
+            false,
+            DEFAULT_USER_AGENT,
+            DEFAULT_EXTRA_HEADERS,
+        ) {
             Ok(()) => {}
             Err(error) => println!("[yt] thumbnail {} failed: {}", video_id, error),
         }
@@ -1424,7 +1479,7 @@ fn fetch_url_to_socket_streaming(
             "https" => https_get_to_socket(&current, &mut output, user_agent, extra_headers)?,
             _ => {
                 let response = http_get(&current, user_agent, extra_headers)?;
-                write_all(&mut output, &response.body, "media stream")?;
+                write_socket_all(&output, &response.body, "media stream")?;
                 response
             }
         };
@@ -1563,18 +1618,7 @@ fn plain_http_get(
     user_agent: &str,
     extra_headers: &str,
 ) -> Result<HttpResponse, String> {
-    let ip = resolve_host(&url.host)?;
-    println!(
-        "[yt] resolved {} -> {}.{}.{}.{}",
-        url.host, ip[0], ip[1], ip[2], ip[3]
-    );
-
-    let mut socket =
-        Socket::new_with_domain(SocketDomain::Inet4, SocketType::Stream, SocketProtocol::Tcp)
-            .map_err(|_| String::from("failed to create TCP socket"))?;
-    socket
-        .connect_inet(Inet4SocketAddress::new(ip, url.port))
-        .map_err(|_| String::from("TCP connect failed"))?;
+    let mut socket = connect_tcp(&url.host, url.port)?;
     println!("[yt] TCP connected {}:{}", url.host, url.port);
 
     let request = format!(
@@ -1630,21 +1674,18 @@ fn plain_http_get(
         }
         body.truncate(content_length);
     } else {
+        socket
+            .set_read_timeout(Some(Duration::from_nanos(500_000_000)))
+            .map_err(|_| String::from("failed to set HTTP read timeout"))?;
         loop {
-            let mut poll_handle = [PollHandle::new(socket.as_raw() as u32, POLLIN)];
-            match poll(&mut poll_handle, 500_000_000) {
+            let mut chunk = [0u8; 8192];
+            match socket.read(&mut chunk) {
                 Ok(0) => break,
-                Ok(_) => {
-                    let mut chunk = [0u8; 8192];
-                    let n = socket
-                        .read(&mut chunk)
-                        .map_err(|_| String::from("HTTP body read failed"))?;
-                    if n == 0 {
-                        break;
-                    }
-                    body.extend_from_slice(&chunk[..n]);
+                Ok(n) => body.extend_from_slice(&chunk[..n]),
+                Err(err) if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) => {
+                    break;
                 }
-                Err(_) => return Err(String::from("poll failed while reading HTTP body")),
+                Err(_) => return Err(String::from("HTTP body read failed")),
             }
         }
     }
@@ -1654,6 +1695,10 @@ fn plain_http_get(
         headers,
         body,
     })
+}
+
+fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, String> {
+    TcpStream::connect((host, port)).map_err(|_| String::from("TCP connect failed"))
 }
 
 fn https_get(
@@ -1683,7 +1728,7 @@ fn https_get_to_file(
 
 fn https_get_to_socket(
     url: &UrlParts,
-    output: &mut Socket,
+    output: &Socket,
     user_agent: &str,
     extra_headers: &str,
 ) -> Result<HttpResponse, String> {
@@ -1717,18 +1762,7 @@ fn https_request_to_file(
     request: &[u8],
     output: &str,
 ) -> Result<HttpResponse, String> {
-    let ip = resolve_host(&url.host)?;
-    println!(
-        "[yt] resolved {} -> {}.{}.{}.{}",
-        url.host, ip[0], ip[1], ip[2], ip[3]
-    );
-
-    let mut socket =
-        Socket::new_with_domain(SocketDomain::Inet4, SocketType::Stream, SocketProtocol::Tcp)
-            .map_err(|_| String::from("failed to create TCP socket"))?;
-    socket
-        .connect_inet(Inet4SocketAddress::new(ip, url.port))
-        .map_err(|_| String::from("TCP connect failed"))?;
+    let mut socket = connect_tcp(&url.host, url.port)?;
 
     let config = tls_client_config()?;
     let server_name = ServerName::try_from(url.host.clone())
@@ -1894,19 +1928,9 @@ fn https_request_to_file(
 fn https_request_to_socket(
     url: &UrlParts,
     request: &[u8],
-    output: &mut Socket,
+    output: &Socket,
 ) -> Result<HttpResponse, String> {
-    let ip = resolve_host(&url.host)?;
-    println!(
-        "[yt] resolved {} -> {}.{}.{}.{}",
-        url.host, ip[0], ip[1], ip[2], ip[3]
-    );
-
-    let mut tcp =
-        Socket::new_with_domain(SocketDomain::Inet4, SocketType::Stream, SocketProtocol::Tcp)
-            .map_err(|_| String::from("failed to create TCP socket"))?;
-    tcp.connect_inet(Inet4SocketAddress::new(ip, url.port))
-        .map_err(|_| String::from("TCP connect failed"))?;
+    let mut tcp = connect_tcp(&url.host, url.port)?;
 
     let config = tls_client_config()?;
     let server_name = ServerName::try_from(url.host.clone())
@@ -1995,7 +2019,7 @@ fn https_request_to_socket(
                             if (200..300).contains(&status) {
                                 let body = &header_buffer[header_end..];
                                 if !body.is_empty() {
-                                    write_all(output, body, "media stream")?;
+                                    write_socket_all(output, body, "media stream")?;
                                     body_written += body.len();
                                 }
                                 header_buffer.clear();
@@ -2004,7 +2028,7 @@ fn https_request_to_socket(
                             }
                             headers = Some(parsed_headers);
                         } else if (200..300).contains(&status) {
-                            write_all(output, record.payload, "media stream")?;
+                            write_socket_all(output, record.payload, "media stream")?;
                             body_written += record.payload.len();
                         } else if error_body.len() < 512 {
                             let remaining = 512 - error_body.len();
@@ -2060,18 +2084,7 @@ fn https_request_to_socket(
 }
 
 fn https_request(url: &UrlParts, request: &[u8]) -> Result<HttpResponse, String> {
-    let ip = resolve_host(&url.host)?;
-    println!(
-        "[yt] resolved {} -> {}.{}.{}.{}",
-        url.host, ip[0], ip[1], ip[2], ip[3]
-    );
-
-    let mut socket =
-        Socket::new_with_domain(SocketDomain::Inet4, SocketType::Stream, SocketProtocol::Tcp)
-            .map_err(|_| String::from("failed to create TCP socket"))?;
-    socket
-        .connect_inet(Inet4SocketAddress::new(ip, url.port))
-        .map_err(|_| String::from("TCP connect failed"))?;
+    let mut socket = connect_tcp(&url.host, url.port)?;
 
     let config = tls_client_config()?;
     let server_name = ServerName::try_from(url.host.clone())
@@ -2250,7 +2263,7 @@ fn chunked_body_complete(buffer: &[u8]) -> bool {
     }
 }
 
-fn read_tls_from_socket(socket: &mut Socket, buffer: &mut Vec<u8>) -> Result<bool, String> {
+fn read_tls_from_socket(socket: &mut TcpStream, buffer: &mut Vec<u8>) -> Result<bool, String> {
     wait_readable(socket, TLS_TIMEOUT_NS)?;
     let mut chunk = [0u8; 8192];
     let n = socket
@@ -2324,7 +2337,7 @@ fn decode_chunked_buffer(buffer: &[u8]) -> Result<Vec<u8>, String> {
     Ok(decoded)
 }
 
-fn read_chunked_body(socket: &mut Socket, buffer: &mut Vec<u8>) -> Result<(), String> {
+fn read_chunked_body(socket: &mut TcpStream, buffer: &mut Vec<u8>) -> Result<(), String> {
     let mut decoded = Vec::new();
     let mut offset = 0usize;
 
@@ -2354,7 +2367,7 @@ fn read_chunked_body(socket: &mut Socket, buffer: &mut Vec<u8>) -> Result<(), St
     Ok(())
 }
 
-fn read_more(socket: &mut Socket, buffer: &mut Vec<u8>) -> Result<(), String> {
+fn read_more(socket: &mut TcpStream, buffer: &mut Vec<u8>) -> Result<(), String> {
     wait_readable(socket, HTTP_TIMEOUT_NS)?;
     let mut chunk = [0u8; 8192];
     let n = socket
@@ -3254,128 +3267,6 @@ fn parse_hex_u16(input: &[u8]) -> Option<u16> {
     Some(value)
 }
 
-fn resolve_host(host: &str) -> Result<[u8; 4], String> {
-    if let Some(ip) = parse_ipv4(host) {
-        return Ok(ip);
-    }
-
-    let dns = configured_dns_server().unwrap_or(DEFAULT_DNS);
-    println!(
-        "[yt] DNS A {} via {}.{}.{}.{}",
-        host, dns[0], dns[1], dns[2], dns[3]
-    );
-    let query = build_dns_query(host)?;
-    let mut socket = Socket::new_with_domain(
-        SocketDomain::Inet4,
-        SocketType::Datagram,
-        SocketProtocol::Udp,
-    )
-    .map_err(|_| String::from("failed to create UDP socket"))?;
-    socket
-        .connect_inet(Inet4SocketAddress::new(dns, DNS_PORT))
-        .map_err(|_| String::from("DNS UDP connect failed"))?;
-    write_all(&mut socket, &query, "DNS query")?;
-    wait_readable(&socket, DNS_TIMEOUT_NS)?;
-
-    let mut response = [0u8; 1500];
-    let n = socket
-        .read(&mut response)
-        .map_err(|_| String::from("DNS read failed"))?;
-    parse_dns_a_response(&response[..n]).ok_or_else(|| String::from("DNS A record not found"))
-}
-
-fn configured_dns_server() -> Option<[u8; 4]> {
-    let (status, _) = list_interfaces().ok()?;
-    if status.dns_set == 1 {
-        Some(status.dns_server)
-    } else {
-        None
-    }
-}
-
-fn build_dns_query(host: &str) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    out.extend_from_slice(&0x5954u16.to_be_bytes());
-    out.extend_from_slice(&0x0100u16.to_be_bytes());
-    out.extend_from_slice(&1u16.to_be_bytes());
-    out.extend_from_slice(&0u16.to_be_bytes());
-    out.extend_from_slice(&0u16.to_be_bytes());
-    out.extend_from_slice(&0u16.to_be_bytes());
-
-    for label in host.split('.') {
-        if label.is_empty() || label.len() > 63 {
-            return Err(String::from("invalid DNS name"));
-        }
-        out.push(label.len() as u8);
-        out.extend_from_slice(label.as_bytes());
-    }
-    out.push(0);
-    out.extend_from_slice(&1u16.to_be_bytes());
-    out.extend_from_slice(&1u16.to_be_bytes());
-    Ok(out)
-}
-
-fn parse_dns_a_response(packet: &[u8]) -> Option<[u8; 4]> {
-    if packet.len() < 12 {
-        return None;
-    }
-    if read_u16(packet, 0)? != 0x5954 {
-        return None;
-    }
-    let qdcount = read_u16(packet, 4)? as usize;
-    let ancount = read_u16(packet, 6)? as usize;
-    let mut offset = 12usize;
-    for _ in 0..qdcount {
-        skip_dns_name(packet, &mut offset)?;
-        offset = offset.checked_add(4)?;
-        if offset > packet.len() {
-            return None;
-        }
-    }
-    for _ in 0..ancount {
-        skip_dns_name(packet, &mut offset)?;
-        let rr_type = read_u16(packet, offset)?;
-        let rr_class = read_u16(packet, offset + 2)?;
-        let rdlen = read_u16(packet, offset + 8)? as usize;
-        offset += 10;
-        if offset + rdlen > packet.len() {
-            return None;
-        }
-        if rr_type == 1 && rr_class == 1 && rdlen == 4 {
-            return Some([
-                packet[offset],
-                packet[offset + 1],
-                packet[offset + 2],
-                packet[offset + 3],
-            ]);
-        }
-        offset += rdlen;
-    }
-    None
-}
-
-fn skip_dns_name(packet: &[u8], offset: &mut usize) -> Option<()> {
-    loop {
-        let len = *packet.get(*offset)?;
-        *offset += 1;
-        if len == 0 {
-            return Some(());
-        }
-        if len & 0xc0 == 0xc0 {
-            *offset += 1;
-            return if *offset <= packet.len() {
-                Some(())
-            } else {
-                None
-            };
-        }
-        *offset += len as usize;
-        if *offset > packet.len() {
-            return None;
-        }
-    }
-}
-
 fn parse_url(input: &str) -> Result<UrlParts, String> {
     let scheme_end = input
         .find("://")
@@ -3553,13 +3444,11 @@ fn is_redirect(status: u16) -> bool {
     matches!(status, 301 | 302 | 303 | 307 | 308)
 }
 
-fn wait_readable(socket: &Socket, timeout_ns: i64) -> Result<(), String> {
-    let mut poll_handle = [PollHandle::new(socket.as_raw() as u32, POLLIN)];
-    match poll(&mut poll_handle, timeout_ns) {
-        Ok(0) => Err(String::from("network read timed out")),
-        Ok(_) => Ok(()),
-        Err(_) => Err(String::from("network poll failed")),
-    }
+fn wait_readable(socket: &TcpStream, timeout_ns: i64) -> Result<(), String> {
+    let timeout = Duration::from_nanos(timeout_ns.max(0) as u64);
+    socket
+        .set_read_timeout(Some(timeout))
+        .map_err(|_| String::from("failed to set network read timeout"))
 }
 
 fn write_all<W: Write>(writer: &mut W, mut data: &[u8], context: &str) -> Result<(), String> {
@@ -3577,6 +3466,38 @@ fn write_all<W: Write>(writer: &mut W, mut data: &[u8], context: &str) -> Result
                 continue;
             }
             Err(err) => return Err(format!("{} write failed: {}", context, err)),
+        };
+        if n == 0 {
+            return Err(format!("{} short write", context));
+        }
+        would_block_retries = 0;
+        data = &data[n..];
+        if !data.is_empty() {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+    Ok(())
+}
+
+fn write_socket_all(socket: &Socket, mut data: &[u8], context: &str) -> Result<(), String> {
+    let stream = socket
+        .as_handle()
+        .as_stream()
+        .map_err(|_| format!("{} write failed", context))?;
+    let mut would_block_retries = 0usize;
+    let max_would_block_retries = if context == "media stream" { 6000 } else { 200 };
+    while !data.is_empty() {
+        let n = match stream.write(data) {
+            Ok(n) => n,
+            Err(StreamError::WouldBlock) => {
+                would_block_retries += 1;
+                if would_block_retries > max_would_block_retries {
+                    return Err(format!("{} write timed out", context));
+                }
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            Err(_) => return Err(format!("{} write failed", context)),
         };
         if n == 0 {
             return Err(format!("{} short write", context));
@@ -3624,28 +3545,6 @@ fn youtube_video_id_from_raw(input: &str) -> Option<&str> {
     }
 }
 
-fn parse_ipv4(input: &str) -> Option<[u8; 4]> {
-    let mut out = [0u8; 4];
-    let mut count = 0usize;
-    for part in input.split('.') {
-        if count >= 4 {
-            return None;
-        }
-        out[count] = parse_u8(part)?;
-        count += 1;
-    }
-    if count == 4 { Some(out) } else { None }
-}
-
-fn parse_u8(input: &str) -> Option<u8> {
-    let value = parse_usize(input)?;
-    if value <= u8::MAX as usize {
-        Some(value as u8)
-    } else {
-        None
-    }
-}
-
 fn parse_u16(input: &str) -> Option<u16> {
     let value = parse_usize(input)?;
     if value <= u16::MAX as usize {
@@ -3684,13 +3583,6 @@ fn parse_hex_usize(input: &str) -> Option<usize> {
         value = value.checked_mul(16)?.checked_add(digit as usize)?;
     }
     Some(value)
-}
-
-fn read_u16(data: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_be_bytes([
-        *data.get(offset)?,
-        *data.get(offset + 1)?,
-    ]))
 }
 
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
