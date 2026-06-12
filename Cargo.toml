@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
+license = "MIT"
 members = [
     "scarlet-youtube",
     "scarlet-youtube-net",
