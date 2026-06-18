@@ -264,7 +264,7 @@ impl YtGuiApp {
 }
 
 impl Application for YtGuiApp {
-    fn body(&self) -> impl View {
+    fn scenes(&self) -> impl Scene {
         let results_len = self.results.get().len();
         let page = self.page.get();
         let page_count = page_count(results_len);
@@ -450,6 +450,10 @@ impl Application for YtGuiApp {
         )
         .app_id("org.scarlet-os.yt-gui")
         .size(Size::new(990.0, 760.0))
+    }
+
+    fn listenables(&self) -> Vec<&dyn Listenable> {
+        <Self as View>::listenables(self)
     }
 
     fn debug_logging(&self) -> bool {
