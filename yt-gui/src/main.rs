@@ -640,18 +640,21 @@ fn handle_list_key(
     match event {
         KeyEvent::Pressed {
             keycode: KeyCode::Tab,
+            ..
         } => {
             list_focused.set(false);
             true
         }
         KeyEvent::Pressed {
             keycode: KeyCode::Enter,
+            ..
         } => {
             play_selected(results, selected, status);
             true
         }
         KeyEvent::Pressed {
             keycode: KeyCode::Down,
+            ..
         } => {
             move_selection(
                 results,
@@ -667,6 +670,7 @@ fn handle_list_key(
         }
         KeyEvent::Pressed {
             keycode: KeyCode::Up,
+            ..
         } => {
             move_selection(
                 results,
@@ -682,9 +686,11 @@ fn handle_list_key(
         }
         KeyEvent::Pressed {
             keycode: KeyCode::PageDown,
+            ..
         }
         | KeyEvent::Pressed {
             keycode: KeyCode::Right,
+            ..
         } => {
             next_page(
                 results,
@@ -699,15 +705,18 @@ fn handle_list_key(
         }
         KeyEvent::Pressed {
             keycode: KeyCode::PageUp,
+            ..
         }
         | KeyEvent::Pressed {
             keycode: KeyCode::Left,
+            ..
         } => {
             previous_page(results, page, selected, status, details);
             true
         }
         KeyEvent::Pressed {
             keycode: KeyCode::Escape,
+            ..
         } => exit(0),
         _ => false,
     }

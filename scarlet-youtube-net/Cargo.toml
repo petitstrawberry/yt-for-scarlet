@@ -6,7 +6,7 @@ license = "MIT"
 
 [dependencies]
 scarlet-youtube = { workspace = true }
-scarlet-os = { git = "https://github.com/petitstrawberry/Scarlet", package = "scarlet-os" }
+scarlet-os = { git = "https://github.com/petitstrawberry/Scarlet", branch = "dev", package = "scarlet-os" }
 getrandom = { version = "0.2", features = ["custom"] }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
