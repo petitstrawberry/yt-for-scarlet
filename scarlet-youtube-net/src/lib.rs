@@ -239,7 +239,6 @@ impl YoutubeSearchCursor {
 
         let previous_continuation = self.continuation.clone();
         let payload = if !self.started {
-            println!("[yt] loading YouTube search API");
             self.started = true;
             fetch_youtube_search_initial(
                 &self.api_key,
@@ -826,15 +825,20 @@ fn print_usage() {
 }
 
 fn select_youtube_search_result(query: &str) -> Result<YoutubeSearchResult, String> {
-    let results = youtube_search(query)?;
+    println!("[yt] searching YouTube: {}", query);
+    let mut cursor = YoutubeSearchCursor::new(query);
+    let first_page = cursor.next_page(YOUTUBE_SEARCH_PAGE_SIZE)?;
+    let mut results = first_page.results;
+    let mut has_more = first_page.has_more;
     if results.is_empty() {
         return Err(String::from("no YouTube search results found"));
     }
 
     let _raw_mode = SearchRawMode::enter()?;
     let mut selected = 0usize;
+    let mut notice = None;
     loop {
-        print_youtube_search_tui(query, &results, selected)?;
+        print_youtube_search_tui(query, &results, selected, has_more, notice.as_deref())?;
         let page = selected / YOUTUBE_SEARCH_PAGE_SIZE;
         let end = ((page + 1) * YOUTUBE_SEARCH_PAGE_SIZE).min(results.len());
         let page_len = end.saturating_sub(page * YOUTUBE_SEARCH_PAGE_SIZE);
@@ -846,15 +850,60 @@ fn select_youtube_search_result(query: &str) -> Result<YoutubeSearchResult, Stri
                     .ok_or_else(|| String::from("selection out of range"));
             }
             SearchKey::Cancel => return Err(String::from("selection canceled")),
-            SearchKey::Down => selected = (selected + 1).min(results.len() - 1),
-            SearchKey::Up => selected = selected.saturating_sub(1),
-            SearchKey::NextPage => {
-                selected = ((page + 1) * YOUTUBE_SEARCH_PAGE_SIZE).min(results.len() - 1);
+            SearchKey::Down => {
+                let target = selected.saturating_add(1);
+                if needs_more_search_results(target, results.len(), has_more) {
+                    match load_next_search_page(&mut cursor, &mut results, &mut has_more) {
+                        Ok(0) => {
+                            notice = Some(String::from("no additional search results returned"));
+                        }
+                        Ok(_) => {
+                            selected = target.min(results.len() - 1);
+                            notice = None;
+                        }
+                        Err(error) => {
+                            notice = Some(format!("failed to load more results: {}", error));
+                        }
+                    }
+                } else {
+                    selected = target.min(results.len() - 1);
+                    notice = None;
+                }
             }
-            SearchKey::PreviousPage => selected = page.saturating_sub(1) * YOUTUBE_SEARCH_PAGE_SIZE,
+            SearchKey::Up => {
+                selected = selected.saturating_sub(1);
+                notice = None;
+            }
+            SearchKey::NextPage => {
+                let target = (page + 1).saturating_mul(YOUTUBE_SEARCH_PAGE_SIZE);
+                if needs_more_search_results(target, results.len(), has_more) {
+                    match load_next_search_page(&mut cursor, &mut results, &mut has_more) {
+                        Ok(0) => {
+                            notice = Some(String::from("no additional search results returned"));
+                        }
+                        Ok(_) => {
+                            selected = target.min(results.len() - 1);
+                            notice = None;
+                        }
+                        Err(error) => {
+                            notice = Some(format!("failed to load more results: {}", error));
+                        }
+                    }
+                } else if target < results.len() {
+                    selected = target;
+                    notice = None;
+                } else {
+                    notice = Some(String::from("no more search results"));
+                }
+            }
+            SearchKey::PreviousPage => {
+                selected = page.saturating_sub(1) * YOUTUBE_SEARCH_PAGE_SIZE;
+                notice = None;
+            }
             SearchKey::Number(index) => {
                 if index == 0 || index > page_len {
-                    return Err(String::from("selection out of range"));
+                    notice = Some(String::from("selection out of range"));
+                    continue;
                 }
                 let result_index = page * YOUTUBE_SEARCH_PAGE_SIZE + index - 1;
                 return results
@@ -867,10 +916,43 @@ fn select_youtube_search_result(query: &str) -> Result<YoutubeSearchResult, Stri
     }
 }
 
+fn load_next_search_page(
+    cursor: &mut YoutubeSearchCursor,
+    results: &mut Vec<YoutubeSearchResult>,
+    has_more: &mut bool,
+) -> Result<usize, String> {
+    if !*has_more {
+        return Ok(0);
+    }
+    let page = cursor.next_page(YOUTUBE_SEARCH_PAGE_SIZE)?;
+    let added = page.results.len();
+    results.extend(page.results);
+    *has_more = page.has_more;
+    Ok(added)
+}
+
+fn needs_more_search_results(target: usize, loaded: usize, has_more: bool) -> bool {
+    has_more && target >= loaded
+}
+
+#[cfg(test)]
+mod interactive_search_tests {
+    use super::needs_more_search_results;
+
+    #[test]
+    fn additional_results_are_requested_only_at_the_loaded_boundary() {
+        assert!(!needs_more_search_results(9, 10, true));
+        assert!(needs_more_search_results(10, 10, true));
+        assert!(!needs_more_search_results(10, 10, false));
+    }
+}
+
 fn print_youtube_search_tui(
     query: &str,
     results: &[YoutubeSearchResult],
     selected: usize,
+    has_more: bool,
+    notice: Option<&str>,
 ) -> Result<(), String> {
     let mut out = stdout();
     out.write_all(b"\x1b[2J\x1b[H")
@@ -879,14 +961,16 @@ fn print_youtube_search_tui(
         .map_err(|_| String::from("failed to flush search UI"))?;
 
     let page = selected / YOUTUBE_SEARCH_PAGE_SIZE;
-    let page_count = results.len().div_ceil(YOUTUBE_SEARCH_PAGE_SIZE);
+    let page_count = results.len().div_ceil(YOUTUBE_SEARCH_PAGE_SIZE).max(1);
+    let more_suffix = if has_more { "+" } else { "" };
     let start = page * YOUTUBE_SEARCH_PAGE_SIZE;
     let end = (start + YOUTUBE_SEARCH_PAGE_SIZE).min(results.len());
     println!(
-        "[yt] search results for '{}' page {}/{}:",
+        "[yt] search results for '{}' page {}/{}{}:",
         query,
         page + 1,
-        page_count
+        page_count,
+        more_suffix
     );
     for (index, result) in results[start..end].iter().enumerate() {
         let absolute_index = start + index;
@@ -904,6 +988,9 @@ fn print_youtube_search_tui(
     }
     println!();
     println!("Enter play  j/k move  n/p page  1-0 play item  q cancel");
+    if let Some(notice) = notice {
+        println!("[yt] {}", notice);
+    }
     Ok(())
 }
 
@@ -1275,6 +1362,7 @@ fn fetch_youtube_search_continuation(
         extra_headers.push_str("\r\n");
     }
 
+    println!("[yt] loading YouTube search continuation");
     let response = https_post_json(
         &parse_url(&api_url)?,
         &body,
