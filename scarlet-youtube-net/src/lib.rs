@@ -12,7 +12,7 @@ use std::time::Duration;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::time_provider::TimeProvider;
-use rustls::unbuffered::ConnectionState;
+use rustls::unbuffered::{ConnectionState, TransmitTlsData};
 use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme};
 use scarlet_os::Handle;
 use scarlet_os::handle::capability::StreamError;
@@ -24,6 +24,7 @@ const HTTP_PORT: u16 = 80;
 const HTTPS_PORT: u16 = 443;
 const HTTP_TIMEOUT_NS: i64 = 10_000_000_000;
 const TLS_TIMEOUT_NS: i64 = 60_000_000_000;
+const TLS_READ_RETRY_DELAY_NS: u64 = 10_000_000;
 const MAX_REDIRECTS: usize = 8;
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_HTTPS_RESPONSE_BYTES: usize = 512 * 1024 * 1024;
@@ -1889,17 +1890,14 @@ fn https_request_to_file(
                         .encode(&mut outgoing_tls)
                         .map_err(|err| format!("TLS encode failed: {:?}", err))?;
                 }
-                ConnectionState::TransmitTlsData(transmit) => {
-                    if pending_out_len > 0 {
-                        write_all(
-                            &mut socket,
-                            &outgoing_tls[..pending_out_len],
-                            "TLS handshake",
-                        )?;
-                        pending_out_len = 0;
-                    }
-                    transmit.done();
-                }
+                ConnectionState::TransmitTlsData(transmit) => transmit_tls_data_and_request(
+                    transmit,
+                    &mut socket,
+                    &mut outgoing_tls,
+                    &mut pending_out_len,
+                    request,
+                    &mut request_sent,
+                )?,
                 ConnectionState::BlockedHandshake => {
                     should_read = true;
                 }
@@ -2056,13 +2054,14 @@ fn https_request_to_socket(
                         .encode(&mut outgoing_tls)
                         .map_err(|err| format!("TLS encode failed: {:?}", err))?;
                 }
-                ConnectionState::TransmitTlsData(transmit) => {
-                    if pending_out_len > 0 {
-                        write_all(&mut tcp, &outgoing_tls[..pending_out_len], "TLS handshake")?;
-                        pending_out_len = 0;
-                    }
-                    transmit.done();
-                }
+                ConnectionState::TransmitTlsData(transmit) => transmit_tls_data_and_request(
+                    transmit,
+                    &mut tcp,
+                    &mut outgoing_tls,
+                    &mut pending_out_len,
+                    request,
+                    &mut request_sent,
+                )?,
                 ConnectionState::BlockedHandshake => {
                     should_read = true;
                 }
@@ -2208,20 +2207,14 @@ fn https_request(url: &UrlParts, request: &[u8]) -> Result<HttpResponse, String>
                         println!("[yt] TLS encode {} bytes", pending_out_len);
                     }
                 }
-                ConnectionState::TransmitTlsData(transmit) => {
-                    if pending_out_len > 0 {
-                        if LOG_TLS_IO {
-                            println!("[yt] TLS transmit {} bytes", pending_out_len);
-                        }
-                        write_all(
-                            &mut socket,
-                            &outgoing_tls[..pending_out_len],
-                            "TLS handshake",
-                        )?;
-                        pending_out_len = 0;
-                    }
-                    transmit.done();
-                }
+                ConnectionState::TransmitTlsData(transmit) => transmit_tls_data_and_request(
+                    transmit,
+                    &mut socket,
+                    &mut outgoing_tls,
+                    &mut pending_out_len,
+                    request,
+                    &mut request_sent,
+                )?,
                 ConnectionState::BlockedHandshake => {
                     if LOG_TLS_IO {
                         println!("[yt] TLS blocked handshake; reading");
@@ -2354,11 +2347,47 @@ fn chunked_body_complete(buffer: &[u8]) -> bool {
 }
 
 fn read_tls_from_socket(socket: &mut TcpStream, buffer: &mut Vec<u8>) -> Result<bool, String> {
-    wait_readable(socket, TLS_TIMEOUT_NS)?;
+    configure_read_timeout(socket, TLS_TIMEOUT_NS)?;
+    let deadline_ns = monotonic_time_ns().saturating_add(TLS_TIMEOUT_NS.max(0) as u64);
+    read_tls_until(
+        socket,
+        buffer,
+        deadline_ns,
+        monotonic_time_ns,
+        thread::sleep,
+    )
+}
+
+fn read_tls_until<R, N, S>(
+    reader: &mut R,
+    buffer: &mut Vec<u8>,
+    deadline_ns: u64,
+    mut now_ns: N,
+    mut sleep: S,
+) -> Result<bool, String>
+where
+    R: Read,
+    N: FnMut() -> u64,
+    S: FnMut(Duration),
+{
     let mut chunk = [0u8; 8192];
-    let n = socket
-        .read(&mut chunk)
-        .map_err(|err| format!("TLS socket read failed: {}", err))?;
+    let n = loop {
+        match reader.read(&mut chunk) {
+            Ok(n) => break n,
+            Err(err) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {
+                let now = now_ns();
+                if now >= deadline_ns {
+                    return Err(String::from("TLS socket read timed out"));
+                }
+                let delay_ns = TLS_READ_RETRY_DELAY_NS.min(deadline_ns - now);
+                sleep(Duration::from_nanos(delay_ns));
+            }
+            Err(err) if err.kind() == ErrorKind::TimedOut => {
+                return Err(String::from("TLS socket read timed out"));
+            }
+            Err(err) => return Err(format!("TLS socket read failed: {}", err)),
+        }
+    };
     if n == 0 {
         return Ok(false);
     }
@@ -2367,6 +2396,201 @@ fn read_tls_from_socket(socket: &mut TcpStream, buffer: &mut Vec<u8>) -> Result<
     }
     buffer.extend_from_slice(&chunk[..n]);
     Ok(true)
+}
+
+#[cfg(target_os = "scarlet")]
+fn monotonic_time_ns() -> u64 {
+    scarlet_os::time::monotonic_time_ns()
+}
+
+#[cfg(not(target_os = "scarlet"))]
+fn monotonic_time_ns() -> u64 {
+    use std::sync::OnceLock;
+    use std::time::Instant;
+
+    static START: OnceLock<Instant> = OnceLock::new();
+    START
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_nanos()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+#[cfg(test)]
+mod tls_socket_read_tests {
+    use std::cell::Cell;
+    use std::io::{Error, ErrorKind, Read};
+    use std::time::Duration;
+
+    use super::read_tls_until;
+
+    struct DelayedReader {
+        reads: usize,
+    }
+
+    impl Read for DelayedReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            match self.reads {
+                1 => Err(Error::new(ErrorKind::WouldBlock, "not ready")),
+                2 => Err(Error::new(ErrorKind::Interrupted, "interrupted")),
+                _ => {
+                    buffer[..4].copy_from_slice(b"data");
+                    Ok(4)
+                }
+            }
+        }
+    }
+
+    struct BlockedReader {
+        reads: usize,
+    }
+
+    impl Read for BlockedReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            Err(Error::new(ErrorKind::WouldBlock, "not ready"))
+        }
+    }
+
+    struct InterruptedReader {
+        reads: usize,
+    }
+
+    impl Read for InterruptedReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            Err(Error::new(ErrorKind::Interrupted, "interrupted"))
+        }
+    }
+
+    struct EofReader;
+
+    impl Read for EofReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Ok(0)
+        }
+    }
+
+    struct ErrorReader {
+        kind: ErrorKind,
+    }
+
+    impl Read for ErrorReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Err(Error::new(self.kind, "injected read error"))
+        }
+    }
+
+    #[test]
+    fn retries_transient_tls_socket_reads() {
+        let now_ns = Cell::new(0u64);
+        let sleeps = Cell::new(0usize);
+        let mut reader = DelayedReader { reads: 0 };
+        let mut received = Vec::new();
+
+        let open = read_tls_until(
+            &mut reader,
+            &mut received,
+            25_000_000,
+            || now_ns.get(),
+            |duration| {
+                sleeps.set(sleeps.get() + 1);
+                now_ns.set(now_ns.get() + duration.as_nanos() as u64);
+            },
+        )
+        .unwrap();
+
+        assert!(open);
+        assert_eq!(received, b"data");
+        assert_eq!(reader.reads, 3);
+        assert_eq!(sleeps.get(), 2);
+    }
+
+    #[test]
+    fn times_out_when_tls_socket_remains_blocked() {
+        let now_ns = Cell::new(0u64);
+        let mut reader = BlockedReader { reads: 0 };
+        let mut received = Vec::new();
+
+        let error = read_tls_until(
+            &mut reader,
+            &mut received,
+            20_000_000,
+            || now_ns.get(),
+            |duration: Duration| {
+                now_ns.set(now_ns.get() + duration.as_nanos() as u64);
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "TLS socket read timed out");
+        assert_eq!(reader.reads, 3);
+        assert!(received.is_empty());
+    }
+
+    #[test]
+    fn times_out_when_tls_socket_is_continuously_interrupted() {
+        let now_ns = Cell::new(0u64);
+        let sleeps = Cell::new(0usize);
+        let mut reader = InterruptedReader { reads: 0 };
+        let mut received = Vec::new();
+
+        let error = read_tls_until(
+            &mut reader,
+            &mut received,
+            20_000_000,
+            || now_ns.get(),
+            |duration: Duration| {
+                sleeps.set(sleeps.get() + 1);
+                now_ns.set(now_ns.get() + duration.as_nanos() as u64);
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "TLS socket read timed out");
+        assert_eq!(reader.reads, 3);
+        assert_eq!(sleeps.get(), 2);
+        assert!(received.is_empty());
+    }
+
+    #[test]
+    fn reports_tls_socket_eof_without_appending_data() {
+        let mut reader = EofReader;
+        let mut received = Vec::new();
+
+        let open = read_tls_until(&mut reader, &mut received, 1, || 0, |_| {}).unwrap();
+
+        assert!(!open);
+        assert!(received.is_empty());
+    }
+
+    #[test]
+    fn maps_socket_timeout_errors_to_tls_timeout() {
+        let mut reader = ErrorReader {
+            kind: ErrorKind::TimedOut,
+        };
+        let mut received = Vec::new();
+
+        let error = read_tls_until(&mut reader, &mut received, 1, || 0, |_| {}).unwrap_err();
+
+        assert_eq!(error, "TLS socket read timed out");
+        assert!(received.is_empty());
+    }
+
+    #[test]
+    fn preserves_fatal_tls_socket_read_errors() {
+        let mut reader = ErrorReader {
+            kind: ErrorKind::ConnectionReset,
+        };
+        let mut received = Vec::new();
+
+        let error = read_tls_until(&mut reader, &mut received, 1, || 0, |_| {}).unwrap_err();
+
+        assert!(error.starts_with("TLS socket read failed:"));
+        assert!(error.contains("injected read error"));
+        assert!(received.is_empty());
+    }
 }
 
 fn parse_complete_http_response(received: Vec<u8>) -> Result<HttpResponse, String> {
@@ -3534,9 +3758,13 @@ fn is_redirect(status: u16) -> bool {
     matches!(status, 301 | 302 | 303 | 307 | 308)
 }
 
-fn wait_readable(socket: &TcpStream, timeout_ns: i64) -> Result<(), String> {
+fn configure_read_timeout(socket: &TcpStream, timeout_ns: i64) -> Result<(), String> {
     let timeout = Duration::from_nanos(timeout_ns.max(0) as u64);
     set_read_timeout_if_supported(socket, timeout, "failed to set network read timeout")
+}
+
+fn wait_readable(socket: &TcpStream, timeout_ns: i64) -> Result<(), String> {
+    configure_read_timeout(socket, timeout_ns)
 }
 
 fn set_read_timeout_if_supported(
@@ -3549,6 +3777,37 @@ fn set_read_timeout_if_supported(
         Err(err) if err.kind() == ErrorKind::Unsupported => Ok(()),
         Err(_) => Err(String::from(context)),
     }
+}
+
+fn transmit_tls_data_and_request<W: Write>(
+    mut transmit: TransmitTlsData<'_, rustls::client::ClientConnectionData>,
+    writer: &mut W,
+    outgoing_tls: &mut [u8],
+    pending_out_len: &mut usize,
+    request: &[u8],
+    request_sent: &mut bool,
+) -> Result<(), String> {
+    if *pending_out_len > 0 {
+        if LOG_TLS_IO {
+            println!("[yt] TLS transmit {} bytes", *pending_out_len);
+        }
+        write_all(writer, &outgoing_tls[..*pending_out_len], "TLS handshake")?;
+        *pending_out_len = 0;
+    }
+
+    if !*request_sent && let Some(mut write_traffic) = transmit.may_encrypt_app_data() {
+        let written = write_traffic
+            .encrypt(request, outgoing_tls)
+            .map_err(|err| format!("TLS HTTP request encrypt failed: {:?}", err))?;
+        if LOG_TLS_IO {
+            println!("[yt] TLS HTTP request {} bytes", written);
+        }
+        write_all(writer, &outgoing_tls[..written], "TLS HTTP request")?;
+        *request_sent = true;
+    }
+
+    transmit.done();
+    Ok(())
 }
 
 fn write_all<W: Write>(writer: &mut W, mut data: &[u8], context: &str) -> Result<(), String> {
