@@ -34,11 +34,14 @@ const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 Scarlet-yt/0.1";
 const DEFAULT_EXTRA_HEADERS: &str = "";
 const YOUTUBE_MEDIA_EXTRA_HEADERS: &str =
     "Accept-Language: en-US,en;q=0.9\r\nRange: bytes=0-\r\nReferer: https://www.youtube.com/\r\n";
+const YOUTUBE_PLAYER_API_HOSTS: [&str; 2] = ["www.youtube.com", "youtubei.googleapis.com"];
+const YOUTUBE_ANDROID_VR_ATTEMPTS_PER_HOST: usize = 2;
+const YOUTUBE_MEDIA_GET_ATTEMPTS: usize = 3;
 const YOUTUBE_WEB_CLIENT_VERSION: &str = "2.20260114.08.00";
-const YOUTUBE_MWEB_CLIENT_VERSION: &str = "2.20260115.01.00";
-const YOUTUBE_ANDROID_CLIENT_VERSION: &str = "21.02.35";
+const YOUTUBE_MWEB_CLIENT_VERSION: &str = "2.20260708.05.00";
+const YOUTUBE_ANDROID_CLIENT_VERSION: &str = "21.26.364";
 const YOUTUBE_ANDROID_VR_CLIENT_VERSION: &str = "1.65.10";
-const YOUTUBE_IOS_CLIENT_VERSION: &str = "21.02.3";
+const YOUTUBE_IOS_CLIENT_VERSION: &str = "21.26.4";
 const YOUTUBE_SEARCH_PAGE_SIZE: usize = 10;
 const YOUTUBE_SEARCH_MAX_RESULTS: usize = 30;
 
@@ -455,7 +458,7 @@ fn run() -> Result<(), String> {
         )?;
         Some(path)
     } else {
-        fetch_url_to_file(
+        fetch_url_to_file_streaming(
             &media.video_url,
             &output,
             print_headers,
@@ -1507,45 +1510,56 @@ fn fetch_url_to_file_streaming(
     user_agent: &str,
     extra_headers: &str,
 ) -> Result<(), String> {
-    let mut current = parse_url(url)?;
-    for redirect_index in 0..=MAX_REDIRECTS {
-        println!(
-            "[yt] GET {}://{}:{}{}",
-            current.scheme,
-            current.host,
-            current.port,
-            display_path(&current.path)
-        );
-        let response = match current.scheme.as_str() {
-            "https" => https_get_to_file(&current, output, user_agent, extra_headers)?,
-            _ => {
-                fetch_url_to_file(url, output, print_headers, user_agent, extra_headers)?;
-                return Ok(());
+    'media_attempts: for attempt in 1..=YOUTUBE_MEDIA_GET_ATTEMPTS {
+        let mut current = parse_url(url)?;
+        for redirect_index in 0..=MAX_REDIRECTS {
+            println!(
+                "[yt] GET {}://{}:{}{}",
+                current.scheme,
+                current.host,
+                current.port,
+                display_path(&current.path)
+            );
+            let response = match current.scheme.as_str() {
+                "https" => https_get_to_file(&current, output, user_agent, extra_headers)?,
+                _ => {
+                    fetch_url_to_file(url, output, print_headers, user_agent, extra_headers)?;
+                    return Ok(());
+                }
+            };
+            if print_headers {
+                println!("{}", response.headers);
             }
-        };
-        if print_headers {
-            println!("{}", response.headers);
-        }
 
-        if is_redirect(response.status) {
-            let location = header_value(&response.headers, "location")
-                .ok_or_else(|| String::from("redirect without Location header"))?;
-            if redirect_index == MAX_REDIRECTS {
-                return Err(String::from("too many redirects"));
+            if is_redirect(response.status) {
+                let location = header_value(&response.headers, "location")
+                    .ok_or_else(|| String::from("redirect without Location header"))?;
+                if redirect_index == MAX_REDIRECTS {
+                    return Err(String::from("too many redirects"));
+                }
+                current = resolve_redirect(&current, &location)?;
+                continue;
             }
-            current = resolve_redirect(&current, &location)?;
-            continue;
-        }
 
-        if response.status < 200 || response.status >= 300 {
-            print_http_error_body(response.status, &response.body);
-            return Err(format!("HTTP status {}", response.status));
-        }
+            if response.status == 403 && attempt < YOUTUBE_MEDIA_GET_ATTEMPTS {
+                println!(
+                    "[yt] media GET returned HTTP 403; retrying ({}/{})",
+                    attempt + 1,
+                    YOUTUBE_MEDIA_GET_ATTEMPTS
+                );
+                continue 'media_attempts;
+            }
+            if response.status < 200 || response.status >= 300 {
+                print_http_error_body(response.status, &response.body);
+                return Err(format!("HTTP status {}", response.status));
+            }
 
-        return Ok(());
+            return Ok(());
+        }
+        return Err(String::from("too many redirects"));
     }
 
-    Err(String::from("too many redirects"))
+    Err(String::from("media GET retries exhausted"))
 }
 
 fn fetch_url_to_socket_streaming(
@@ -1555,46 +1569,57 @@ fn fetch_url_to_socket_streaming(
     user_agent: &str,
     extra_headers: &str,
 ) -> Result<(), String> {
-    let mut current = parse_url(url)?;
-    for redirect_index in 0..=MAX_REDIRECTS {
-        println!(
-            "[yt] GET {}://{}:{}{}",
-            current.scheme,
-            current.host,
-            current.port,
-            display_path(&current.path)
-        );
-        let response = match current.scheme.as_str() {
-            "https" => https_get_to_socket(&current, &mut output, user_agent, extra_headers)?,
-            _ => {
-                let response = http_get(&current, user_agent, extra_headers)?;
-                write_socket_all(&output, &response.body, "media stream")?;
-                response
+    'media_attempts: for attempt in 1..=YOUTUBE_MEDIA_GET_ATTEMPTS {
+        let mut current = parse_url(url)?;
+        for redirect_index in 0..=MAX_REDIRECTS {
+            println!(
+                "[yt] GET {}://{}:{}{}",
+                current.scheme,
+                current.host,
+                current.port,
+                display_path(&current.path)
+            );
+            let response = match current.scheme.as_str() {
+                "https" => https_get_to_socket(&current, &mut output, user_agent, extra_headers)?,
+                _ => {
+                    let response = http_get(&current, user_agent, extra_headers)?;
+                    write_socket_all(&output, &response.body, "media stream")?;
+                    response
+                }
+            };
+            if print_headers {
+                println!("{}", response.headers);
             }
-        };
-        if print_headers {
-            println!("{}", response.headers);
-        }
 
-        if is_redirect(response.status) {
-            let location = header_value(&response.headers, "location")
-                .ok_or_else(|| String::from("redirect without Location header"))?;
-            if redirect_index == MAX_REDIRECTS {
-                return Err(String::from("too many redirects"));
+            if is_redirect(response.status) {
+                let location = header_value(&response.headers, "location")
+                    .ok_or_else(|| String::from("redirect without Location header"))?;
+                if redirect_index == MAX_REDIRECTS {
+                    return Err(String::from("too many redirects"));
+                }
+                current = resolve_redirect(&current, &location)?;
+                continue;
             }
-            current = resolve_redirect(&current, &location)?;
-            continue;
-        }
 
-        if response.status < 200 || response.status >= 300 {
-            print_http_error_body(response.status, &response.body);
-            return Err(format!("HTTP status {}", response.status));
-        }
+            if response.status == 403 && attempt < YOUTUBE_MEDIA_GET_ATTEMPTS {
+                println!(
+                    "[yt] media GET returned HTTP 403; retrying ({}/{})",
+                    attempt + 1,
+                    YOUTUBE_MEDIA_GET_ATTEMPTS
+                );
+                continue 'media_attempts;
+            }
+            if response.status < 200 || response.status >= 300 {
+                print_http_error_body(response.status, &response.body);
+                return Err(format!("HTTP status {}", response.status));
+            }
 
-        return Ok(());
+            return Ok(());
+        }
+        return Err(String::from("too many redirects"));
     }
 
-    Err(String::from("too many redirects"))
+    Err(String::from("media GET retries exhausted"))
 }
 
 fn fetch_url_to_file(
@@ -1681,6 +1706,32 @@ pub fn fetch_url_bytes_with_headers(
     Err(String::from("too many redirects"))
 }
 
+fn probe_url_with_headers(url: &str, user_agent: &str, extra_headers: &str) -> Result<(), String> {
+    let mut current = parse_url(url)?;
+    for redirect_index in 0..=MAX_REDIRECTS {
+        let response = http_get_headers(&current, user_agent, extra_headers)?;
+
+        if is_redirect(response.status) {
+            let location = header_value(&response.headers, "location")
+                .ok_or_else(|| String::from("redirect without Location header"))?;
+            if redirect_index == MAX_REDIRECTS {
+                return Err(String::from("too many redirects"));
+            }
+            current = resolve_redirect(&current, &location)?;
+            continue;
+        }
+
+        if response.status < 200 || response.status >= 300 {
+            print_http_error_body(response.status, &response.body);
+            return Err(format!("HTTP status {}", response.status));
+        }
+
+        return Ok(());
+    }
+
+    Err(String::from("too many redirects"))
+}
+
 struct HttpResponse {
     status: u16,
     headers: String,
@@ -1699,6 +1750,50 @@ fn http_get(url: &UrlParts, user_agent: &str, extra_headers: &str) -> Result<Htt
         "http" => plain_http_get(url, user_agent, extra_headers),
         "https" => https_get(url, user_agent, extra_headers),
         _ => Err(format!("unsupported URL scheme: {}", url.scheme)),
+    }
+}
+
+fn http_get_headers(
+    url: &UrlParts,
+    user_agent: &str,
+    extra_headers: &str,
+) -> Result<HttpResponse, String> {
+    match url.scheme.as_str() {
+        "http" => plain_http_get_headers(url, user_agent, extra_headers),
+        "https" => https_get_headers(url, user_agent, extra_headers),
+        _ => Err(format!("unsupported URL scheme: {}", url.scheme)),
+    }
+}
+
+fn plain_http_get_headers(
+    url: &UrlParts,
+    user_agent: &str,
+    extra_headers: &str,
+) -> Result<HttpResponse, String> {
+    let mut socket = connect_tcp(&url.host, url.port)?;
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nAccept: */*\r\nAccept-Encoding: identity\r\n{}Connection: close\r\n\r\n",
+        url.path, url.host, user_agent, extra_headers
+    );
+    write_all(&mut socket, request.as_bytes(), "HTTP request")?;
+
+    let mut received = Vec::new();
+    loop {
+        if received.len() > MAX_HEADER_BYTES {
+            return Err(String::from("HTTP headers are too large"));
+        }
+        if find_bytes(&received, b"\r\n\r\n").is_some() {
+            return parse_http_response_headers(&received);
+        }
+        wait_readable(&socket, HTTP_TIMEOUT_NS)?;
+        let mut chunk = [0u8; 2048];
+        let n = socket
+            .read(&mut chunk)
+            .map_err(|_| String::from("HTTP read failed"))?;
+        if n == 0 {
+            return Err(String::from("connection closed before headers"));
+        }
+        received.extend_from_slice(&chunk[..n]);
     }
 }
 
@@ -1802,6 +1897,18 @@ fn https_get(
         url.path, url.host, user_agent, extra_headers
     );
     https_request(url, request.as_bytes())
+}
+
+fn https_get_headers(
+    url: &UrlParts,
+    user_agent: &str,
+    extra_headers: &str,
+) -> Result<HttpResponse, String> {
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nAccept: */*\r\nAccept-Encoding: identity\r\n{}Connection: close\r\n\r\n",
+        url.path, url.host, user_agent, extra_headers
+    );
+    https_request_headers(url, request.as_bytes())
 }
 
 fn https_get_to_file(
@@ -2173,6 +2280,18 @@ fn https_request_to_socket(
 }
 
 fn https_request(url: &UrlParts, request: &[u8]) -> Result<HttpResponse, String> {
+    https_request_with_mode(url, request, false)
+}
+
+fn https_request_headers(url: &UrlParts, request: &[u8]) -> Result<HttpResponse, String> {
+    https_request_with_mode(url, request, true)
+}
+
+fn https_request_with_mode(
+    url: &UrlParts,
+    request: &[u8],
+    headers_only: bool,
+) -> Result<HttpResponse, String> {
     let mut socket = connect_tcp(&url.host, url.port)?;
 
     let config = tls_client_config()?;
@@ -2246,6 +2365,9 @@ fn https_request(url: &UrlParts, request: &[u8]) -> Result<HttpResponse, String>
                         }
                         plaintext.extend_from_slice(record.payload);
                         discard = discard.saturating_add(record.discard);
+                        if headers_only && find_bytes(&plaintext, b"\r\n\r\n").is_some() {
+                            return parse_http_response_headers(&plaintext);
+                        }
                     }
                 }
                 ConnectionState::PeerClosed | ConnectionState::Closed => {
@@ -2422,7 +2544,7 @@ mod tls_socket_read_tests {
     use std::io::{Error, ErrorKind, Read};
     use std::time::Duration;
 
-    use super::read_tls_until;
+    use super::{parse_http_response_headers, read_tls_until};
 
     struct DelayedReader {
         reads: usize,
@@ -2591,6 +2713,44 @@ mod tls_socket_read_tests {
         assert!(error.contains("injected read error"));
         assert!(received.is_empty());
     }
+
+    #[test]
+    fn parses_probe_response_without_complete_body() {
+        let response = parse_http_response_headers(
+            b"HTTP/1.1 206 Partial Content\r\nContent-Length: 1000000\r\n\r\npartial",
+        )
+        .unwrap();
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body, b"partial");
+    }
+
+    #[test]
+    fn limits_probe_error_body_capture() {
+        let mut response = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 1024\r\n\r\n".to_vec();
+        response.extend_from_slice(&[b'x'; 1024]);
+
+        let response = parse_http_response_headers(&response).unwrap();
+
+        assert_eq!(response.status, 403);
+        assert_eq!(response.body.len(), 512);
+    }
+}
+
+fn parse_http_response_headers(received: &[u8]) -> Result<HttpResponse, String> {
+    let header_end = find_bytes(received, b"\r\n\r\n")
+        .map(|pos| pos + 4)
+        .ok_or_else(|| String::from("HTTP headers not found"))?;
+    let headers = core::str::from_utf8(&received[..header_end])
+        .map_err(|_| String::from("HTTP headers are not UTF-8"))?
+        .to_string();
+    let status = parse_status(&headers)?;
+    let body_end = received.len().min(header_end + 512);
+    Ok(HttpResponse {
+        status,
+        headers,
+        body: received[header_end..body_end].to_vec(),
+    })
 }
 
 fn parse_complete_http_response(received: Vec<u8>) -> Result<HttpResponse, String> {
@@ -2901,35 +3061,93 @@ fn resolve_youtube_media_url_via_player_api(
         YoutubeClientSpec::ios(),
     ];
     let mut last_error = String::from("no YouTube player clients tried");
-    let mut progressive_fallback = None;
 
-    for client in clients {
-        match try_youtube_player_client(video_id, api_key, &client, visitor_data) {
-            Ok(YoutubeClientMedia::Dash(media)) => {
-                return Ok(media.into_selection(client.user_agent, YOUTUBE_MEDIA_EXTRA_HEADERS));
-            }
-            Ok(YoutubeClientMedia::Progressive(url)) => {
-                if progressive_fallback.is_none() {
-                    progressive_fallback = Some(MediaSelection {
-                        video_url: url,
-                        audio_url: None,
-                        user_agent: client.user_agent,
-                        extra_headers: YOUTUBE_MEDIA_EXTRA_HEADERS,
-                    });
+    for client in &clients {
+        let mut progressive_fallback = None;
+        let attempts_per_host = if client.platform == YoutubeClientPlatform::AndroidVr {
+            YOUTUBE_ANDROID_VR_ATTEMPTS_PER_HOST
+        } else {
+            1
+        };
+        for api_host in YOUTUBE_PLAYER_API_HOSTS {
+            for attempt in 1..=attempts_per_host {
+                match try_youtube_player_client(video_id, api_key, client, visitor_data, api_host) {
+                    Ok(media) => {
+                        let YoutubeClientMedia { dash, progressive } = media;
+                        let has_direct_media = dash.is_some() || progressive.is_some();
+
+                        if let Some(dash) = dash {
+                            match probe_youtube_dash_media(&dash, client.user_agent) {
+                                Ok(()) => {
+                                    return Ok(dash.into_selection(
+                                        client.user_agent,
+                                        YOUTUBE_MEDIA_EXTRA_HEADERS,
+                                    ));
+                                }
+                                Err(error) => {
+                                    last_error = format!(
+                                        "{} DASH media probe via {} failed: {}",
+                                        client.label, api_host, error
+                                    );
+                                    println!(
+                                        "[yt] YouTube {} DASH media probe via {} failed (attempt {}/{}): {}",
+                                        client.label, api_host, attempt, attempts_per_host, error
+                                    );
+                                }
+                            }
+                        }
+
+                        if let Some(url) = progressive {
+                            match probe_youtube_progressive_media(&url, client.user_agent) {
+                                Ok(()) if progressive_fallback.is_none() => {
+                                    progressive_fallback = Some(MediaSelection {
+                                        video_url: url,
+                                        audio_url: None,
+                                        user_agent: client.user_agent,
+                                        extra_headers: YOUTUBE_MEDIA_EXTRA_HEADERS,
+                                    });
+                                }
+                                Ok(()) => {}
+                                Err(error) => {
+                                    last_error = format!(
+                                        "{} progressive media probe via {} failed: {}",
+                                        client.label, api_host, error
+                                    );
+                                    println!(
+                                        "[yt] YouTube {} progressive media probe via {} failed (attempt {}/{}): {}",
+                                        client.label, api_host, attempt, attempts_per_host, error
+                                    );
+                                }
+                            }
+                        }
+
+                        if !has_direct_media {
+                            last_error = format!(
+                                "{} returned no direct MP4 streams via {}",
+                                client.label, api_host
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        println!(
+                            "[yt] YouTube {} player API via {} failed: {}",
+                            client.label, api_host, error
+                        );
+                        last_error = error;
+                    }
                 }
-                last_error = format!("{} returned only progressive MP4", client.label);
             }
-            Ok(YoutubeClientMedia::None) => {
-                last_error = format!("{} returned no direct MP4 streams", client.label);
-            }
-            Err(error) => {
-                println!("[yt] YouTube {} player API failed: {}", client.label, error);
-                last_error = error;
-            }
+        }
+        if let Some(media) = progressive_fallback {
+            println!(
+                "[yt] selected validated progressive MP4 fallback from {} player API",
+                client.label
+            );
+            return Ok(media);
         }
     }
 
-    progressive_fallback.ok_or(last_error)
+    Err(last_error)
 }
 
 fn try_youtube_player_client(
@@ -2937,8 +3155,10 @@ fn try_youtube_player_client(
     api_key: &str,
     client: &YoutubeClientSpec<'_>,
     visitor_data: Option<&str>,
+    api_host: &str,
 ) -> Result<YoutubeClientMedia, String> {
-    let payload = fetch_youtube_player_payload(video_id, api_key, client, visitor_data)?;
+    let payload =
+        fetch_youtube_player_payload_from_host(video_id, api_key, client, visitor_data, api_host)?;
     let stats = youtube_format_stats(&payload);
     println!(
         "[yt] {} formats: total={} progressive_mp4={} h264_video={} aac_audio={} direct={} sig={} cipher_s={} dash_direct={} dash_sig={} dash_s={}",
@@ -2957,21 +3177,32 @@ fn try_youtube_player_client(
     if let Some(reason) = youtube_playability_reason(&payload) {
         println!("[yt] {} playability: {}", client.label, reason);
     }
-    if let Some(media) = select_youtube_dash_mp4(&payload) {
+    let dash = select_youtube_dash_mp4(&payload);
+    if let Some(media) = dash.as_ref() {
         println!(
             "[yt] selected DASH MP4 streams from {} player API: {}p + AAC",
             client.label, media.video_height
         );
-        return Ok(YoutubeClientMedia::Dash(media));
     }
-    if let Some(url) = select_youtube_progressive_mp4(&payload) {
+    let progressive = select_youtube_progressive_mp4(&payload);
+    if progressive.is_some() {
         println!(
             "[yt] found progressive MP4 stream from {} player API",
             client.label
         );
-        return Ok(YoutubeClientMedia::Progressive(url));
     }
-    Ok(YoutubeClientMedia::None)
+    Ok(YoutubeClientMedia { dash, progressive })
+}
+
+fn probe_youtube_dash_media(media: &YoutubeDashSelection, user_agent: &str) -> Result<(), String> {
+    probe_url_with_headers(&media.video_url, user_agent, YOUTUBE_MEDIA_EXTRA_HEADERS)?;
+    probe_url_with_headers(&media.audio_url, user_agent, YOUTUBE_MEDIA_EXTRA_HEADERS)?;
+    Ok(())
+}
+
+fn probe_youtube_progressive_media(url: &str, user_agent: &str) -> Result<(), String> {
+    probe_url_with_headers(url, user_agent, YOUTUBE_MEDIA_EXTRA_HEADERS)?;
+    Ok(())
 }
 
 fn fetch_youtube_player_payload(
@@ -2980,9 +3211,25 @@ fn fetch_youtube_player_payload(
     client: &YoutubeClientSpec<'_>,
     visitor_data: Option<&str>,
 ) -> Result<String, String> {
+    fetch_youtube_player_payload_from_host(
+        video_id,
+        api_key,
+        client,
+        visitor_data,
+        YOUTUBE_PLAYER_API_HOSTS[0],
+    )
+}
+
+fn fetch_youtube_player_payload_from_host(
+    video_id: &str,
+    api_key: &str,
+    client: &YoutubeClientSpec<'_>,
+    visitor_data: Option<&str>,
+    api_host: &str,
+) -> Result<String, String> {
     let api_url = format!(
-        "https://www.youtube.com/youtubei/v1/player?key={}&prettyPrint=false",
-        api_key
+        "https://{}/youtubei/v1/player?key={}&prettyPrint=false",
+        api_host, api_key
     );
     let body = youtube_player_request_body(video_id, client, visitor_data);
     let mut extra_headers = format!(
@@ -2995,7 +3242,10 @@ fn fetch_youtube_player_payload(
         extra_headers.push_str("\r\n");
     }
 
-    println!("[yt] loading YouTube {} player API", client.label);
+    println!(
+        "[yt] loading YouTube {} player API via {}",
+        client.label, api_host
+    );
     let response = https_post_json(
         &parse_url(&api_url)?,
         &body,
@@ -3019,10 +3269,9 @@ fn fetch_youtube_player_payload(
     Ok(payload.to_string())
 }
 
-enum YoutubeClientMedia {
-    Dash(YoutubeDashSelection),
-    Progressive(String),
-    None,
+struct YoutubeClientMedia {
+    dash: Option<YoutubeDashSelection>,
+    progressive: Option<String>,
 }
 
 struct YoutubeClientSpec<'a> {
@@ -3063,7 +3312,7 @@ impl<'a> YoutubeClientSpec<'a> {
             client_name: "ANDROID",
             client_version: YOUTUBE_ANDROID_CLIENT_VERSION,
             client_id: 3,
-            user_agent: "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip",
+            user_agent: "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
             platform: YoutubeClientPlatform::Android,
         }
     }
@@ -3085,12 +3334,13 @@ impl<'a> YoutubeClientSpec<'a> {
             client_name: "IOS",
             client_version: YOUTUBE_IOS_CLIENT_VERSION,
             client_id: 5,
-            user_agent: "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            user_agent: "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
             platform: YoutubeClientPlatform::Ios,
         }
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum YoutubeClientPlatform {
     Web,
     Android,
@@ -3121,7 +3371,7 @@ fn youtube_player_request_body(
         YoutubeClientPlatform::Web => {}
         YoutubeClientPlatform::Android => {
             body.push_str(
-                ",\"androidSdkVersion\":30,\"userAgent\":\"com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip\",\"osName\":\"Android\",\"osVersion\":\"11\"",
+                ",\"androidSdkVersion\":30,\"userAgent\":\"com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip\",\"osName\":\"Android\",\"osVersion\":\"11\"",
             );
         }
         YoutubeClientPlatform::AndroidVr => {
@@ -3131,7 +3381,7 @@ fn youtube_player_request_body(
         }
         YoutubeClientPlatform::Ios => {
             body.push_str(
-                ",\"deviceMake\":\"Apple\",\"deviceModel\":\"iPhone16,2\",\"userAgent\":\"com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)\",\"osName\":\"iPhone\",\"osVersion\":\"18.3.2.22D82\"",
+                ",\"deviceMake\":\"Apple\",\"deviceModel\":\"iPhone16,2\",\"userAgent\":\"com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)\",\"osName\":\"iPhone\",\"osVersion\":\"18.3.2.22D82\"",
             );
         }
     }
