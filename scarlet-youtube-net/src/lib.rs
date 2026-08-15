@@ -4,7 +4,7 @@ use std::io::{ErrorKind, Read, Write, stdin, stdout};
 use std::mem::ManuallyDrop;
 use std::net::TcpStream;
 use std::num::NonZeroU32;
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -568,16 +568,25 @@ fn stream_media_pair_and_play(
 
     println!("[yt] downloading DASH audio before playback");
     let _ = remove_file(&stream_audio_output);
-    fetch_url_to_file_streaming(
+    if let Err(error) = fetch_url_to_file_streaming(
         &audio_url,
         &stream_audio_output,
         print_headers,
         user_agent,
         extra_headers,
-    )?;
+    ) {
+        let _ = remove_file(&stream_audio_output);
+        return Err(error);
+    }
     println!("[yt] saved {}", stream_audio_output);
 
-    let video_listener = prepare_stream_socket(&video_socket_path)?;
+    let video_listener = match prepare_stream_socket(&video_socket_path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            let _ = remove_file(&stream_audio_output);
+            return Err(error);
+        }
+    };
 
     println!(
         "[yt] exec: video_player --hwdc --stream-socket {} --audio {}{}",
@@ -598,9 +607,14 @@ fn stream_media_pair_and_play(
     if let Some(title) = player_title.as_deref() {
         command.args(["--title", title]);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|err| format!("failed to start video_player: {}", err))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = remove_file(&video_socket_path);
+            let _ = remove_file(&stream_audio_output);
+            return Err(format!("failed to start video_player: {}", error));
+        }
+    };
 
     let download_result = match accept_stream_socket(&video_listener, &video_socket_path) {
         Ok(video_stream) => {
@@ -617,9 +631,9 @@ fn stream_media_pair_and_play(
     };
     let _ = remove_file(&video_socket_path);
 
-    let status = child
-        .wait()
-        .map_err(|err| format!("failed to wait for video_player: {}", err))?;
+    let status_result = wait_for_stream_player(&mut child, &download_result);
+    let _ = remove_file(&stream_audio_output);
+    let status = status_result?;
     if let Err(error) = download_result {
         if status.success() && is_media_stream_closed_by_player(&error) {
             println!("[yt] video_player closed; stopped media stream");
@@ -636,8 +650,80 @@ fn stream_media_pair_and_play(
     Ok(())
 }
 
+fn wait_for_stream_player(
+    child: &mut Child,
+    download_result: &Result<(), String>,
+) -> Result<ExitStatus, String> {
+    if should_terminate_stream_player(download_result) {
+        match child
+            .try_wait()
+            .map_err(|error| format!("failed to query video_player: {}", error))?
+        {
+            Some(status) => return Ok(status),
+            None => {
+                println!("[yt] media transfer failed; stopping video_player");
+                terminate_child(child)?;
+            }
+        }
+    }
+
+    child
+        .wait()
+        .map_err(|error| format!("failed to wait for video_player: {}", error))
+}
+
+#[cfg(target_os = "scarlet")]
+fn terminate_child(child: &mut Child) -> Result<(), String> {
+    // Scarlet's std::process::Child::kill is not wired to Native Kill yet.
+    const SIGKILL: usize = 9;
+    let result = scarlet_sys::syscall2(scarlet_sys::Syscall::Kill, child.id() as usize, SIGKILL);
+    if result == usize::MAX {
+        Err(String::from("failed to stop video_player with SIGKILL"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "scarlet"))]
+fn terminate_child(child: &mut Child) -> Result<(), String> {
+    child
+        .kill()
+        .map_err(|error| format!("failed to stop video_player: {}", error))
+}
+
+fn should_terminate_stream_player(download_result: &Result<(), String>) -> bool {
+    matches!(
+        download_result,
+        Err(error) if !is_media_stream_closed_by_player(error)
+    )
+}
+
 fn is_media_stream_closed_by_player(error: &str) -> bool {
     error.starts_with("media stream write failed") || error.starts_with("media stream short write")
+}
+
+#[cfg(test)]
+mod stream_player_tests {
+    use super::should_terminate_stream_player;
+
+    #[test]
+    fn terminates_player_after_http_failure() {
+        assert!(should_terminate_stream_player(&Err(String::from(
+            "HTTP status 403"
+        ))));
+    }
+
+    #[test]
+    fn preserves_player_close_as_normal_shutdown() {
+        assert!(!should_terminate_stream_player(&Err(String::from(
+            "media stream write failed"
+        ))));
+    }
+
+    #[test]
+    fn waits_for_player_after_successful_transfer() {
+        assert!(!should_terminate_stream_player(&Ok(())));
+    }
 }
 
 fn fetch_media_pair_to_files(

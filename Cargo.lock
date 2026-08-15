@@ -1407,6 +1407,7 @@ dependencies = [
  "ring",
  "rustls",
  "scarlet-os",
+ "scarlet-sys",
  "scarlet-youtube",
 ]
 

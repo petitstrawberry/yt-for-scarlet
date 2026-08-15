@@ -110,6 +110,10 @@ enum GuiMessage {
         video_id: String,
         result: std::result::Result<GuiVideoDetails, String>,
     },
+    PlaybackFinished {
+        title: String,
+        result: std::result::Result<(), String>,
+    },
 }
 
 struct SearchLoadResult {
@@ -130,6 +134,7 @@ static YT_GUI_MESSAGES: Mutex<Vec<GuiMessage>> = Mutex::new(Vec::new());
 static YT_GUI_SEARCH_CURSOR: Mutex<Option<YoutubeSearchCursor>> = Mutex::new(None);
 static YT_GUI_THUMBNAIL_ACTIVE: Mutex<bool> = Mutex::new(false);
 static YT_GUI_DETAILS_ACTIVE: Mutex<bool> = Mutex::new(false);
+static YT_GUI_PLAYBACK_ACTIVE: Mutex<bool> = Mutex::new(false);
 
 #[derive(View, Clone)]
 struct YtGuiApp {
@@ -622,6 +627,17 @@ impl YtGuiApp {
                     Err(message) => self.details.set(DetailState::Failed { video_id, message }),
                 }
             }
+            GuiMessage::PlaybackFinished { title, result } => {
+                *YT_GUI_PLAYBACK_ACTIVE
+                    .lock()
+                    .expect("yt gui mutex poisoned") = false;
+                match result {
+                    Ok(()) => self.status.set(format!("Playback finished: {}", title)),
+                    Err(error) => self
+                        .status
+                        .set(format!("Playback failed: {} ({})", title, error)),
+                }
+            }
         }
     }
 }
@@ -769,15 +785,37 @@ fn play_selected(
     };
     let url = row.watch_url();
     let title = row.title.clone();
+    {
+        let mut active = YT_GUI_PLAYBACK_ACTIVE
+            .lock()
+            .expect("yt gui mutex poisoned");
+        if *active {
+            status.set(String::from(
+                "Playback is already active; wait for it to finish or close the player.",
+            ));
+            return;
+        }
+        *active = true;
+    }
     status.set(format!("Starting playback: {}", title));
     println!("[yt-gui] spawn: yt --title <title> {}", url);
-    match Command::new("/bin/yt")
-        .args(["--title", &title, &url])
-        .spawn()
-    {
-        Ok(_child) => status.set(format!("Playback started: {}", title)),
-        Err(_) => status.set(String::from("failed to start /bin/yt")),
-    }
+    thread::spawn(move || {
+        let result = Command::new("/bin/yt")
+            .args(["--title", &title, &url])
+            .status()
+            .map_err(|error| format!("failed to start /bin/yt: {}", error))
+            .and_then(|status| {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "/bin/yt exited with status {}",
+                        status.code().unwrap_or(1)
+                    ))
+                }
+            });
+        push_gui_message(GuiMessage::PlaybackFinished { title, result });
+    });
 }
 
 fn move_selection(

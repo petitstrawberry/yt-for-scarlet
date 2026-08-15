@@ -10,3 +10,6 @@ scarlet-os = { git = "https://github.com/petitstrawberry/Scarlet", branch = "dev
 getrandom = { version = "0.2", features = ["custom"] }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+[target.'cfg(target_os = "scarlet")'.dependencies]
+scarlet-sys = { git = "https://github.com/petitstrawberry/Scarlet", branch = "dev", package = "scarlet-sys" }
