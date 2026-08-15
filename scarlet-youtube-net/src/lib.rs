@@ -424,7 +424,7 @@ fn run() -> Result<(), String> {
         println!("[yt] video id: {}", video_id);
         media = resolve_youtube_media(&input)?;
         if output.is_none() {
-            output = Some(format!("/root/media/youtube-{}.mp4", video_id));
+            output = Some(format!("/tmp/youtube-{}.mp4", video_id));
         }
     }
 
