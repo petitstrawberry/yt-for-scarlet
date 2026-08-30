@@ -30,7 +30,7 @@ Options:
   --headers                  Print response headers
   --no-play                  Download only
   --loop                     Loop playback
-  --title <title>            Set video_player window title
+  --title <title>            Set video-player window title
   --search-results <path>    Write search results as TSV and exit
   --thumbnail-batch <path>   Batch download thumbnails from manifest
   -h, --help                 Show help

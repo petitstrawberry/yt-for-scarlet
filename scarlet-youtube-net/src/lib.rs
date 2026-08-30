@@ -474,14 +474,14 @@ fn run() -> Result<(), String> {
 
     if let Some(audio) = audio_output.as_ref() {
         println!(
-            "[yt] exec: video_player --hwdc {} --audio {}{}{}",
+            "[yt] exec: video-player --hwdc {} --audio {}{}{}",
             output,
             audio,
             player_title.as_ref().map_or("", |_| " --title <title>"),
             if loop_playback { " --loop" } else { "" }
         );
         let mut argv = vec![
-            "video_player",
+            "video-player",
             "--hwdc",
             output.as_str(),
             "--audio",
@@ -494,15 +494,15 @@ fn run() -> Result<(), String> {
         if loop_playback {
             argv.push("--loop");
         }
-        run_video_player(&argv)
+        run_video-player(&argv)
     } else {
         println!(
-            "[yt] exec: video_player --hwdc {}{}{}",
+            "[yt] exec: video-player --hwdc {}{}{}",
             output,
             player_title.as_ref().map_or("", |_| " --title <title>"),
             if loop_playback { " --loop" } else { "" }
         );
-        let mut argv = vec!["video_player", "--hwdc", output.as_str()];
+        let mut argv = vec!["video-player", "--hwdc", output.as_str()];
         if let Some(title) = player_title.as_deref() {
             argv.push("--title");
             argv.push(title);
@@ -510,20 +510,20 @@ fn run() -> Result<(), String> {
         if loop_playback {
             argv.push("--loop");
         }
-        run_video_player(&argv)
+        run_video-player(&argv)
     }
 }
 
-fn run_video_player(argv: &[&str]) -> Result<(), String> {
-    let status = Command::new("/bin/video_player")
+fn run_video-player(argv: &[&str]) -> Result<(), String> {
+    let status = Command::new("/bin/video-player")
         .args(argv.iter().skip(1))
         .status()
-        .map_err(|err| format!("failed to start /bin/video_player: {}", err))?;
+        .map_err(|err| format!("failed to start /bin/video-player: {}", err))?;
     if status.success() {
         Ok(())
     } else {
         Err(format!(
-            "video_player exited with status {}",
+            "video-player exited with status {}",
             status.code().unwrap_or(1)
         ))
     }
@@ -589,12 +589,12 @@ fn stream_media_pair_and_play(
     };
 
     println!(
-        "[yt] exec: video_player --hwdc --stream-socket {} --audio {}{}",
+        "[yt] exec: video-player --hwdc --stream-socket {} --audio {}{}",
         video_socket_path,
         stream_audio_output,
         player_title.as_ref().map_or("", |_| " --title <title>")
     );
-    let mut command = Command::new("/bin/video_player");
+    let mut command = Command::new("/bin/video-player");
     command.args([
         "--hwdc",
         "--stream",
@@ -612,7 +612,7 @@ fn stream_media_pair_and_play(
         Err(error) => {
             let _ = remove_file(&video_socket_path);
             let _ = remove_file(&stream_audio_output);
-            return Err(format!("failed to start video_player: {}", error));
+            return Err(format!("failed to start video-player: {}", error));
         }
     };
 
@@ -636,14 +636,14 @@ fn stream_media_pair_and_play(
     let status = status_result?;
     if let Err(error) = download_result {
         if status.success() && is_media_stream_closed_by_player(&error) {
-            println!("[yt] video_player closed; stopped media stream");
+            println!("[yt] video-player closed; stopped media stream");
             return Ok(());
         }
         return Err(error);
     }
     if !status.success() {
         return Err(format!(
-            "video_player exited with status {}",
+            "video-player exited with status {}",
             status.code().unwrap_or(1)
         ));
     }
@@ -657,11 +657,11 @@ fn wait_for_stream_player(
     if should_terminate_stream_player(download_result) {
         match child
             .try_wait()
-            .map_err(|error| format!("failed to query video_player: {}", error))?
+            .map_err(|error| format!("failed to query video-player: {}", error))?
         {
             Some(status) => return Ok(status),
             None => {
-                println!("[yt] media transfer failed; stopping video_player");
+                println!("[yt] media transfer failed; stopping video-player");
                 terminate_child(child)?;
             }
         }
@@ -669,7 +669,7 @@ fn wait_for_stream_player(
 
     child
         .wait()
-        .map_err(|error| format!("failed to wait for video_player: {}", error))
+        .map_err(|error| format!("failed to wait for video-player: {}", error))
 }
 
 #[cfg(target_os = "scarlet")]
@@ -678,7 +678,7 @@ fn terminate_child(child: &mut Child) -> Result<(), String> {
     const SIGKILL: usize = 9;
     let result = scarlet_sys::syscall2(scarlet_sys::Syscall::Kill, child.id() as usize, SIGKILL);
     if result == usize::MAX {
-        Err(String::from("failed to stop video_player with SIGKILL"))
+        Err(String::from("failed to stop video-player with SIGKILL"))
     } else {
         Ok(())
     }
@@ -688,7 +688,7 @@ fn terminate_child(child: &mut Child) -> Result<(), String> {
 fn terminate_child(child: &mut Child) -> Result<(), String> {
     child
         .kill()
-        .map_err(|error| format!("failed to stop video_player: {}", error))
+        .map_err(|error| format!("failed to stop video-player: {}", error))
 }
 
 fn should_terminate_stream_player(download_result: &Result<(), String>) -> bool {
@@ -879,7 +879,7 @@ fn accept_stream_socket(listener: &Socket, path: &str) -> Result<Socket, String>
         }
     }
     Err(format!(
-        "timed out waiting for video_player to connect {path}"
+        "timed out waiting for video-player to connect {path}"
     ))
 }
 
@@ -903,8 +903,8 @@ fn print_usage() {
     println!("  -o, --output <path>  Save response body");
     println!("  --headers           Print response headers");
     println!("  --no-play           Download only");
-    println!("  --loop              Loop playback in video_player");
-    println!("  --title <title>     Set video_player window title");
+    println!("  --loop              Loop playback in video-player");
+    println!("  --title <title>     Set video-player window title");
     println!("  --search-results <path>  Write search results as TSV and exit");
     println!("  -h, --help          Show this help");
     println!();
