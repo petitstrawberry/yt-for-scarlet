@@ -35,13 +35,12 @@ const DEFAULT_EXTRA_HEADERS: &str = "";
 const YOUTUBE_MEDIA_EXTRA_HEADERS: &str =
     "Accept-Language: en-US,en;q=0.9\r\nRange: bytes=0-\r\nReferer: https://www.youtube.com/\r\n";
 const YOUTUBE_PLAYER_API_HOSTS: [&str; 2] = ["www.youtube.com", "youtubei.googleapis.com"];
-const YOUTUBE_ANDROID_VR_ATTEMPTS_PER_HOST: usize = 2;
 const YOUTUBE_MEDIA_GET_ATTEMPTS: usize = 3;
-const YOUTUBE_WEB_CLIENT_VERSION: &str = "2.20260114.08.00";
+const YOUTUBE_WEB_CLIENT_VERSION: &str = "2.20260708.00.00";
 const YOUTUBE_MWEB_CLIENT_VERSION: &str = "2.20260708.05.00";
 const YOUTUBE_ANDROID_CLIENT_VERSION: &str = "21.26.364";
-const YOUTUBE_ANDROID_VR_CLIENT_VERSION: &str = "1.65.10";
 const YOUTUBE_IOS_CLIENT_VERSION: &str = "21.26.4";
+const YOUTUBE_VISIONOS_CLIENT_VERSION: &str = "1.02";
 const YOUTUBE_SEARCH_PAGE_SIZE: usize = 10;
 const YOUTUBE_SEARCH_MAX_RESULTS: usize = 30;
 
@@ -3140,7 +3139,10 @@ fn resolve_youtube_media_url_via_player_api(
     visitor_data: Option<&str>,
 ) -> Result<MediaSelection, String> {
     let clients = [
-        YoutubeClientSpec::android_vr(),
+        // ANDROID_VR 1.65.10 has been returning HTTP 403 for every media
+        // format since 2026-08-17. VisionOS is the JS-less client used by
+        // current yt-dlp releases and still returns usable direct URLs.
+        YoutubeClientSpec::visionos(),
         YoutubeClientSpec::web(client_version),
         YoutubeClientSpec::mweb(),
         YoutubeClientSpec::android(),
@@ -3150,77 +3152,70 @@ fn resolve_youtube_media_url_via_player_api(
 
     for client in &clients {
         let mut progressive_fallback = None;
-        let attempts_per_host = if client.platform == YoutubeClientPlatform::AndroidVr {
-            YOUTUBE_ANDROID_VR_ATTEMPTS_PER_HOST
-        } else {
-            1
-        };
         for api_host in YOUTUBE_PLAYER_API_HOSTS {
-            for attempt in 1..=attempts_per_host {
-                match try_youtube_player_client(video_id, api_key, client, visitor_data, api_host) {
-                    Ok(media) => {
-                        let YoutubeClientMedia { dash, progressive } = media;
-                        let has_direct_media = dash.is_some() || progressive.is_some();
+            match try_youtube_player_client(video_id, api_key, client, visitor_data, api_host) {
+                Ok(media) => {
+                    let YoutubeClientMedia { dash, progressive } = media;
+                    let has_direct_media = dash.is_some() || progressive.is_some();
 
-                        if let Some(dash) = dash {
-                            match probe_youtube_dash_media(&dash, client.user_agent) {
-                                Ok(()) => {
-                                    return Ok(dash.into_selection(
-                                        client.user_agent,
-                                        YOUTUBE_MEDIA_EXTRA_HEADERS,
-                                    ));
-                                }
-                                Err(error) => {
-                                    last_error = format!(
-                                        "{} DASH media probe via {} failed: {}",
-                                        client.label, api_host, error
-                                    );
-                                    println!(
-                                        "[yt] YouTube {} DASH media probe via {} failed (attempt {}/{}): {}",
-                                        client.label, api_host, attempt, attempts_per_host, error
-                                    );
-                                }
+                    if let Some(dash) = dash {
+                        match probe_youtube_dash_media(&dash, client.user_agent) {
+                            Ok(()) => {
+                                return Ok(dash.into_selection(
+                                    client.user_agent,
+                                    YOUTUBE_MEDIA_EXTRA_HEADERS,
+                                ));
                             }
-                        }
-
-                        if let Some(url) = progressive {
-                            match probe_youtube_progressive_media(&url, client.user_agent) {
-                                Ok(()) if progressive_fallback.is_none() => {
-                                    progressive_fallback = Some(MediaSelection {
-                                        video_url: url,
-                                        audio_url: None,
-                                        user_agent: client.user_agent,
-                                        extra_headers: YOUTUBE_MEDIA_EXTRA_HEADERS,
-                                    });
-                                }
-                                Ok(()) => {}
-                                Err(error) => {
-                                    last_error = format!(
-                                        "{} progressive media probe via {} failed: {}",
-                                        client.label, api_host, error
-                                    );
-                                    println!(
-                                        "[yt] YouTube {} progressive media probe via {} failed (attempt {}/{}): {}",
-                                        client.label, api_host, attempt, attempts_per_host, error
-                                    );
-                                }
+                            Err(error) => {
+                                last_error = format!(
+                                    "{} DASH media probe via {} failed: {}",
+                                    client.label, api_host, error
+                                );
+                                println!(
+                                    "[yt] YouTube {} DASH media probe via {} failed: {}",
+                                    client.label, api_host, error
+                                );
                             }
-                        }
-
-                        if !has_direct_media {
-                            last_error = format!(
-                                "{} returned no direct MP4 streams via {}",
-                                client.label, api_host
-                            );
                         }
                     }
-                    Err(error) => {
-                        println!(
-                            "[yt] YouTube {} player API via {} failed: {}",
-                            client.label, api_host, error
+
+                    if let Some(url) = progressive {
+                        match probe_youtube_progressive_media(&url, client.user_agent) {
+                            Ok(()) if progressive_fallback.is_none() => {
+                                progressive_fallback = Some(MediaSelection {
+                                    video_url: url,
+                                    audio_url: None,
+                                    user_agent: client.user_agent,
+                                    extra_headers: YOUTUBE_MEDIA_EXTRA_HEADERS,
+                                });
+                            }
+                            Ok(()) => {}
+                            Err(error) => {
+                                last_error = format!(
+                                    "{} progressive media probe via {} failed: {}",
+                                    client.label, api_host, error
+                                );
+                                println!(
+                                    "[yt] YouTube {} progressive media probe via {} failed: {}",
+                                    client.label, api_host, error
+                                );
+                            }
+                        }
+                    }
+
+                    if !has_direct_media {
+                        last_error = format!(
+                            "{} returned no direct MP4 streams via {}",
+                            client.label, api_host
                         );
-                        last_error = error;
                     }
+                }
+                Err(error) => {
+                    println!(
+                        "[yt] YouTube {} player API via {} failed: {}",
+                        client.label, api_host, error
+                    );
+                    last_error = error;
                 }
             }
         }
@@ -3403,14 +3398,14 @@ impl<'a> YoutubeClientSpec<'a> {
         }
     }
 
-    fn android_vr() -> Self {
+    fn visionos() -> Self {
         Self {
-            label: "android_vr",
-            client_name: "ANDROID_VR",
-            client_version: YOUTUBE_ANDROID_VR_CLIENT_VERSION,
-            client_id: 28,
-            user_agent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-            platform: YoutubeClientPlatform::AndroidVr,
+            label: "visionos",
+            client_name: "VISIONOS",
+            client_version: YOUTUBE_VISIONOS_CLIENT_VERSION,
+            client_id: 101,
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+            platform: YoutubeClientPlatform::VisionOs,
         }
     }
 
@@ -3430,8 +3425,8 @@ impl<'a> YoutubeClientSpec<'a> {
 enum YoutubeClientPlatform {
     Web,
     Android,
-    AndroidVr,
     Ios,
+    VisionOs,
 }
 
 fn youtube_player_request_body(
@@ -3460,14 +3455,14 @@ fn youtube_player_request_body(
                 ",\"androidSdkVersion\":30,\"userAgent\":\"com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip\",\"osName\":\"Android\",\"osVersion\":\"11\"",
             );
         }
-        YoutubeClientPlatform::AndroidVr => {
-            body.push_str(
-                ",\"deviceMake\":\"Oculus\",\"deviceModel\":\"Quest 3\",\"androidSdkVersion\":32,\"userAgent\":\"com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip\",\"osName\":\"Android\",\"osVersion\":\"12L\"",
-            );
-        }
         YoutubeClientPlatform::Ios => {
             body.push_str(
                 ",\"deviceMake\":\"Apple\",\"deviceModel\":\"iPhone16,2\",\"userAgent\":\"com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)\",\"osName\":\"iPhone\",\"osVersion\":\"18.3.2.22D82\"",
+            );
+        }
+        YoutubeClientPlatform::VisionOs => {
+            body.push_str(
+                ",\"deviceMake\":\"Apple\",\"deviceModel\":\"RealityDevice17,1\",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15\",\"osName\":\"visionOS\",\"osVersion\":\"26.5.23O471\"",
             );
         }
     }
