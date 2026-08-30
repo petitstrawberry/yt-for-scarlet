@@ -30,6 +30,7 @@ const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_HTTPS_RESPONSE_BYTES: usize = 512 * 1024 * 1024;
 const GETRANDOM_ERROR: u32 = getrandom::Error::CUSTOM_START + 1;
 const LOG_TLS_IO: bool = false;
+const TEMP_DIR: &str = "/tmp";
 const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 Scarlet-yt/0.1";
 const DEFAULT_EXTRA_HEADERS: &str = "";
 const YOUTUBE_MEDIA_EXTRA_HEADERS: &str =
@@ -423,11 +424,11 @@ fn run() -> Result<(), String> {
         println!("[yt] video id: {}", video_id);
         media = resolve_youtube_media(&input)?;
         if output.is_none() {
-            output = Some(format!("/tmp/youtube-{}.mp4", video_id));
+            output = Some(format!("{}/youtube-{}.mp4", TEMP_DIR, video_id));
         }
     }
 
-    let output = output.unwrap_or_else(|| String::from("/tmp/yt.mp4"));
+    let output = output.unwrap_or_else(|| format!("{}/yt.mp4", TEMP_DIR));
     if play && !loop_playback {
         if let Some(audio_url) = media.audio_url {
             let audio_output = derive_audio_output_path(&output);
@@ -725,6 +726,20 @@ mod stream_player_tests {
     }
 }
 
+#[cfg(test)]
+mod temporary_path_tests {
+    use super::{TEMP_DIR, stream_file_path, stream_socket_path};
+
+    #[test]
+    fn stream_artifacts_are_created_under_tmp() {
+        let socket = stream_socket_path("/root/media/video.mp4", "video");
+        let file = stream_file_path("/root/media/audio.m4a", "audio");
+
+        assert!(socket.starts_with(&format!("{}/", TEMP_DIR)));
+        assert!(file.starts_with(&format!("{}/", TEMP_DIR)));
+    }
+}
+
 fn fetch_media_pair_to_files(
     video_url: String,
     video_output: String,
@@ -836,7 +851,8 @@ fn fetch_media_pair_to_files_with_markers(
 
 fn stream_socket_path(path: &str, kind: &str) -> String {
     format!(
-        "/tmp/scarlet-yt-{}-{}-{}.sock",
+        "{}/scarlet-yt-{}-{}-{}.sock",
+        TEMP_DIR,
         std::process::id(),
         kind,
         path_basename(path)
@@ -845,7 +861,8 @@ fn stream_socket_path(path: &str, kind: &str) -> String {
 
 fn stream_file_path(path: &str, kind: &str) -> String {
     format!(
-        "/tmp/scarlet-yt-{}-{}-{}",
+        "{}/scarlet-yt-{}-{}-{}",
+        TEMP_DIR,
         std::process::id(),
         kind,
         path_basename(path)
