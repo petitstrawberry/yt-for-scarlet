@@ -494,7 +494,7 @@ fn run() -> Result<(), String> {
         if loop_playback {
             argv.push("--loop");
         }
-        run_video-player(&argv)
+        run_video_player(&argv)
     } else {
         println!(
             "[yt] exec: video-player --hwdc {}{}{}",
@@ -510,11 +510,11 @@ fn run() -> Result<(), String> {
         if loop_playback {
             argv.push("--loop");
         }
-        run_video-player(&argv)
+        run_video_player(&argv)
     }
 }
 
-fn run_video-player(argv: &[&str]) -> Result<(), String> {
+fn run_video_player(argv: &[&str]) -> Result<(), String> {
     let status = Command::new("/bin/video-player")
         .args(argv.iter().skip(1))
         .status()
