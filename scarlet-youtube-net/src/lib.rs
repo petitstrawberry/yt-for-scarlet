@@ -676,7 +676,9 @@ fn wait_for_stream_player(
 fn terminate_child(child: &mut Child) -> Result<(), String> {
     // Scarlet's std::process::Child::kill is not wired to Native Kill yet.
     const SIGKILL: usize = 9;
-    let result = scarlet_sys::syscall2(scarlet_sys::Syscall::Kill, child.id() as usize, SIGKILL);
+    // SAFETY: Kill takes the child PID and a signal number, with no pointer arguments.
+    let result =
+        unsafe { scarlet_sys::syscall2(scarlet_sys::Syscall::Kill, child.id() as usize, SIGKILL) };
     if result == usize::MAX {
         Err(String::from("failed to stop video-player with SIGKILL"))
     } else {
@@ -1194,9 +1196,8 @@ fn tty_set_bool(handle: &Handle, command: u32, enabled: bool) -> Result<(), Stri
 }
 
 fn tty_control(handle: &Handle, command: u32, arg: usize) -> Result<i32, String> {
-    handle
-        .control(command, arg)
-        .map_err(|_| String::from("TTY control failed"))
+    // SAFETY: All callers use scalar TTY settings/readbacks, never pointer arguments.
+    unsafe { handle.control(command, arg) }.map_err(|_| String::from("TTY control failed"))
 }
 
 enum SearchKey {
