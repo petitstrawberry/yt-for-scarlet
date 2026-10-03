@@ -8,3 +8,6 @@ license = "MIT"
 scarlet-youtube-net = { workspace = true }
 scarlet-ui = { workspace = true }
 scarlet-ui-macros = { workspace = true }
+
+[target.'cfg(target_os = "scarlet")'.dependencies]
+scarlet-ui = { workspace = true, features = ["platform-sws"] }

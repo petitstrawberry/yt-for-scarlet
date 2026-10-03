@@ -44,6 +44,25 @@ yt-gui [QUERY]
 
 Search, browse results, view details, and play videos with a graphical interface.
 
+The GUI uses ScarletUI's native navigation, header, text field, and buttons.
+Normal posture uses compact controls; Tablet posture increases touch targets and
+search text size. Results adapt to the available content area, and playback is
+available in the selected video's details.
+
+- Gamepad menu directions move between results and header controls. Confirm
+  opens details or activates the focused control; Cancel returns to results or
+  opens/cancels search. The system's Confirm/Cancel mapping is respected.
+- Search uses the system text input and IME, including its separate soft keyboard.
+- In VideoPlayer, Confirm toggles playback, Left/Right seek five seconds, and
+  Up/Down move between playback, loop, seek, and fullscreen controls. The lower
+  right fullscreen button or F11 toggles fullscreen. Cancel first leaves
+  fullscreen; outside fullscreen it closes playback and restores the selected
+  result. Keyboard Tab also moves between controls.
+- Touch/pointer controls support playback, loop, and drag seeking. Cancelling a
+  drag or resizing the window during a drag keeps the previously committed time.
+
+[Screenshots and validation](docs/controller-ui.md)
+
 ## Building
 
 Requires the Scarlet Rust toolchain (see [Scarlet](https://github.com/petitstrawberry/Scarlet)).
@@ -53,6 +72,10 @@ cargo build --target aarch64-unknown-scarlet
 ```
 
 Bundled into Scarlet via cargo-scarlet.
+
+The ScarletUI dependency is pinned to a revision containing the resize redraw
+fix. No neighboring ScarletUI checkout is required. Use a Scarlet build with the
+corresponding VideoPlayer controls and fullscreen support.
 
 ## Vendored Patches
 

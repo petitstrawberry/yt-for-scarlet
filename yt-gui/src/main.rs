@@ -1,20 +1,22 @@
 extern crate scarlet_ui_macros;
 
 use std::f32;
-use std::process::{Command, exit};
+#[cfg(not(test))]
+use std::process::Command;
 use std::sync::Mutex;
 use std::thread;
 
+use scarlet_ui::graphics;
+mod ui;
 use scarlet_ui::views::ImageFit;
-use scarlet_ui::{
-    BitmapImage, KeyCode, KeyEvent, State, StateId, hstack, prelude::*, vstack, zstack,
-};
+use scarlet_ui::{BitmapImage, KeyCode, KeyEvent, State, hstack, prelude::*, vstack, zstack};
 use scarlet_ui_macros::View;
 use scarlet_youtube_net::{
     YoutubeSearchCursor, YoutubeVideoDetails, fetch_youtube_thumbnail_bytes, youtube_video_details,
 };
+use ui::gallery_columns;
 
-const PAGE_SIZE: usize = 8;
+const PAGE_SIZE: usize = 12;
 const THUMB_WIDTH: u32 = 160;
 const THUMB_HEIGHT: u32 = 90;
 const DETAIL_TEXT_WIDTH: u32 = 272;
@@ -143,29 +145,50 @@ struct YtGuiApp {
     selected: State<usize>,
     page: State<usize>,
     status: State<String>,
-    search_focused: State<bool>,
     list_focused: State<bool>,
     has_more: State<bool>,
     loading_more: State<bool>,
     details: State<DetailState>,
+    screen: State<u8>,
+    control: State<usize>,
+    bounds: State<Size>,
+    confirm_held: State<bool>,
+    fit_window: State<bool>,
+    page_bounds: State<Size>,
+    header_bounds: State<Size>,
 }
 
 impl YtGuiApp {
     fn new(query: String) -> Self {
         Self {
-            query: State::new(StateId::new(0), query),
-            results: State::new(StateId::new(1), Vec::new()),
-            selected: State::new(StateId::new(2), 0),
-            page: State::new(StateId::new(3), 0),
+            query: State::new(scarlet_ui::state::generate_state_id(), query),
+            results: State::new(scarlet_ui::state::generate_state_id(), Vec::new()),
+            selected: State::new(scarlet_ui::state::generate_state_id(), 0),
+            page: State::new(scarlet_ui::state::generate_state_id(), 0),
             status: State::new(
-                StateId::new(4),
+                scarlet_ui::state::generate_state_id(),
                 String::from("Type a query and press Enter."),
             ),
-            search_focused: State::new(StateId::new(5), false),
-            list_focused: State::new(StateId::new(6), false),
-            has_more: State::new(StateId::new(7), false),
-            loading_more: State::new(StateId::new(8), false),
-            details: State::new(StateId::new(9), DetailState::Empty),
+            list_focused: State::new(scarlet_ui::state::generate_state_id(), false),
+            has_more: State::new(scarlet_ui::state::generate_state_id(), false),
+            loading_more: State::new(scarlet_ui::state::generate_state_id(), false),
+            details: State::new(scarlet_ui::state::generate_state_id(), DetailState::Empty),
+            screen: State::new(scarlet_ui::state::generate_state_id(), 0),
+            control: State::new(scarlet_ui::state::generate_state_id(), 0),
+            bounds: State::new(
+                scarlet_ui::state::generate_state_id(),
+                Size::new(800.0, 600.0),
+            ),
+            confirm_held: State::new(scarlet_ui::state::generate_state_id(), false),
+            fit_window: State::new(scarlet_ui::state::generate_state_id(), true),
+            page_bounds: State::new(
+                scarlet_ui::state::generate_state_id(),
+                Size::new(684.0, 528.0),
+            ),
+            header_bounds: State::new(
+                scarlet_ui::state::generate_state_id(),
+                Size::new(684.0, 40.0),
+            ),
         }
     }
 
@@ -173,294 +196,286 @@ impl YtGuiApp {
         self.results.get().get(self.selected.get()).cloned()
     }
 
-    fn result_row(&self, slot: usize) -> impl View + Clone {
-        let results = self.results.get();
-        let page = self.page.get();
-        let absolute_index = page.saturating_mul(PAGE_SIZE).saturating_add(slot);
-        let selected = self.selected.get();
-        let row = results.get(absolute_index).cloned();
-        let is_selected = absolute_index == selected && row.is_some();
-        let background = if is_selected {
-            Color::rgb(230u8, 238u8, 248u8)
-        } else {
-            Color::rgb(250u8, 251u8, 252u8)
-        };
-
-        let border = if is_selected {
-            Color::rgb(35u8, 95u8, 160u8)
-        } else {
-            Color::rgb(222u8, 226u8, 232u8)
-        };
-
-        let (index, title, channel, duration, thumb) = if let Some(row) = row {
-            (
-                format!("{}", absolute_index + 1),
-                compact_text(&row.title, 58),
-                row.channel
-                    .unwrap_or_else(|| String::from("unknown channel")),
-                row.duration.unwrap_or_else(|| String::from("--:--")),
-                row.thumbnail,
-            )
-        } else {
-            (
-                String::new(),
-                String::new(),
-                String::new(),
-                String::new(),
-                ThumbnailState::NotRequested,
-            )
-        };
-
-        zstack! {
-            scarlet_ui::Rectangle::new()
-                .fill(background)
-                .corner_radius(5.0)
-                .border(1.0, border),
-            hstack! {
-                Text::new(index)
-                    .font_size(11.0)
-                    .color(Color::gray(0.42))
-                    .frame_width(24.0),
-                thumbnail_image(thumb)
-                    .fit_mode(ImageFit::Fill)
-                    .frame(96.0, 54.0)
-                    .clip_radius(4.0),
-                vstack! {
-                    Text::new(title)
-                        .font_size(13.0)
-                        .color(Color::rgb(22u8, 26u8, 32u8))
-                        .frame_width(380.0),
-                    Text::new(compact_text(&channel, 42))
-                        .font_size(11.0)
-                        .color(Color::gray(0.42))
-                        .frame_width(380.0),
-                }
-                .frame_width(390.0),
-                Spacer::new(),
-                Text::new(duration)
-                    .font_size(11.0)
-                    .color(Color::gray(0.34))
-                    .frame_width(42.0),
-            }
-            .padding(7.0)
+    fn submit_search_from_key(&self) {
+        if self.confirm_held.get() {
+            return;
         }
-        .frame(620.0, 70.0)
-        .on_click({
-            let results = self.results.clone();
-            let selected = self.selected.clone();
-            let details = self.details.clone();
-            let search_focused = self.search_focused.clone();
-            let list_focused = self.list_focused.clone();
-            move || {
-                if absolute_index < results.get().len() {
-                    selected.set(absolute_index);
-                    search_focused.set(false);
-                    list_focused.set(true);
-                    request_selected_details(
-                        results.clone(),
-                        selected.clone(),
-                        details.clone(),
-                        current_generation(),
+        self.confirm_held.set(true);
+        self.submit_search();
+    }
+
+    fn submit_search(&self) {
+        perform_search(
+            self.query.clone(),
+            self.results.clone(),
+            self.selected.clone(),
+            self.page.clone(),
+            self.status.clone(),
+            self.has_more.clone(),
+            self.loading_more.clone(),
+            self.details.clone(),
+        );
+        self.screen.set(0);
+        self.control.set(1);
+        self.list_focused.set(true);
+    }
+
+    fn play_video(&self, index: usize) {
+        if index >= self.results.get().len() {
+            return;
+        }
+        self.selected.set(index);
+        play_selected(
+            self.results.clone(),
+            self.selected.clone(),
+            self.status.clone(),
+        );
+    }
+
+    fn open_details(&self, index: usize) {
+        if index >= self.results.get().len() {
+            return;
+        }
+        self.selected.set(index);
+        self.control.set(1);
+        self.screen.set(1);
+        request_selected_details(
+            self.results.clone(),
+            self.selected.clone(),
+            self.details.clone(),
+            current_generation(),
+        );
+    }
+
+    fn begin_search(&self) {
+        self.screen.set(2);
+        self.list_focused.set(false);
+    }
+
+    fn cancel_search(&self) {
+        self.screen.set(0);
+        self.control.set(0);
+        self.list_focused.set(true);
+        self.confirm_held.set(false);
+    }
+
+    fn handle_key(&self, event: KeyEvent) -> bool {
+        if let KeyEvent::Released {
+            keycode: KeyCode::Enter,
+            ..
+        } = event
+        {
+            self.confirm_held.set(false);
+            return true;
+        }
+        let KeyEvent::Pressed { keycode, .. } = event else {
+            return false;
+        };
+        if keycode == KeyCode::Enter {
+            if self.confirm_held.get() {
+                return true;
+            }
+            self.confirm_held.set(true);
+        }
+        if keycode == KeyCode::Escape {
+            let was_browse = self.screen.get() == 0;
+            self.screen.set(0);
+            self.control.set(if was_browse { 0 } else { 1 });
+            return true;
+        }
+        if self.screen.get() == 2 {
+            // The focused platform TextField and existing SoftKeyboard own text input.
+            return false;
+        }
+        if self.screen.get() == 1 {
+            match keycode {
+                KeyCode::Up | KeyCode::Down | KeyCode::Tab => {
+                    self.control.set(1 - self.control.get().min(1))
+                }
+                KeyCode::Enter => {
+                    if self.control.get() == 0 {
+                        self.screen.set(0);
+                        self.control.set(1);
+                    } else {
+                        play_selected(
+                            self.results.clone(),
+                            self.selected.clone(),
+                            self.status.clone(),
+                        );
+                    }
+                }
+                _ => return false,
+            }
+            return true;
+        }
+        let layout = ui::PageLayout::new(self.page_bounds.get());
+        let columns = gallery_columns(layout.width, layout.gallery_height);
+        match keycode {
+            KeyCode::Enter => match self.control.get() {
+                0 => {
+                    self.begin_search();
+                }
+                1 => self.open_details(self.selected.get()),
+                2 => previous_page(
+                    self.results.clone(),
+                    self.page.clone(),
+                    self.selected.clone(),
+                    self.status.clone(),
+                    self.details.clone(),
+                ),
+                _ => next_page(
+                    self.results.clone(),
+                    self.page.clone(),
+                    self.selected.clone(),
+                    self.status.clone(),
+                    self.has_more.clone(),
+                    self.loading_more.clone(),
+                    self.details.clone(),
+                ),
+            },
+            KeyCode::Tab => {
+                let controls = [0, 1, 2, 3];
+                let position = controls
+                    .iter()
+                    .position(|c| *c == self.control.get())
+                    .unwrap_or(0);
+                self.control.set(controls[(position + 1) % controls.len()]);
+            }
+            KeyCode::Up | KeyCode::Down => {
+                let down = keycode == KeyCode::Down;
+                if self.control.get() == 0 && down {
+                    self.control.set(1);
+                } else if self.control.get() == 1 {
+                    if !down && self.selected.get() % PAGE_SIZE < columns {
+                        self.control.set(0);
+                    } else {
+                        move_selection(
+                            self.results.clone(),
+                            self.selected.clone(),
+                            self.page.clone(),
+                            self.status.clone(),
+                            self.has_more.clone(),
+                            self.loading_more.clone(),
+                            self.details.clone(),
+                            if down {
+                                columns as isize
+                            } else {
+                                -(columns as isize)
+                            },
+                        );
+                    }
+                } else {
+                    self.control.set(if down { 1 } else { 0 });
+                }
+            }
+            KeyCode::Left | KeyCode::Right => {
+                let right = keycode == KeyCode::Right;
+                if !self.control.get() == 1 {
+                    let controls = [0, 2, 3];
+                    let position = controls
+                        .iter()
+                        .position(|c| *c == self.control.get())
+                        .unwrap_or(0);
+                    self.control.set(
+                        controls[if right {
+                            (position + 1) % 3
+                        } else {
+                            (position + 2) % 3
+                        }],
+                    );
+                } else {
+                    move_selection(
+                        self.results.clone(),
+                        self.selected.clone(),
+                        self.page.clone(),
+                        self.status.clone(),
+                        self.has_more.clone(),
+                        self.loading_more.clone(),
+                        self.details.clone(),
+                        if right { 1 } else { -1 },
                     );
                 }
             }
-        })
+            KeyCode::PageUp => previous_page(
+                self.results.clone(),
+                self.page.clone(),
+                self.selected.clone(),
+                self.status.clone(),
+                self.details.clone(),
+            ),
+            KeyCode::PageDown => next_page(
+                self.results.clone(),
+                self.page.clone(),
+                self.selected.clone(),
+                self.status.clone(),
+                self.has_more.clone(),
+                self.loading_more.clone(),
+                self.details.clone(),
+            ),
+            _ => return false,
+        }
+        true
     }
+}
+
+fn content_size(window_size: Size) -> Size {
+    let decoration = scarlet_ui::views::WindowContentLayout::new(true).decoration_size();
+    Size::new(
+        (window_size.width - decoration.width).max(1.0),
+        (window_size.height - decoration.height).max(1.0),
+    )
 }
 
 impl Application for YtGuiApp {
     fn scenes(&self) -> impl Scene {
-        let results_len = self.results.get().len();
-        let page = self.page.get();
-        let page_count = page_count(results_len);
-        let selected = self.selected.get();
-        let has_more = self.has_more.get();
-        let selected_result = self.selected_result();
-        let (base_title, base_channel, detail_duration, detail_id, detail_thumb) =
-            if let Some(row) = selected_result {
-                (
-                    compact_text(&row.title, 90),
-                    row.channel
-                        .map(|channel| compact_text(&channel, 46))
-                        .unwrap_or_else(|| String::from("unknown channel")),
-                    row.duration.unwrap_or_else(|| String::from("--:--")),
-                    row.video_id,
-                    row.thumbnail,
-                )
-            } else {
-                (
-                    String::from("No video selected"),
-                    String::from("Search and select a result."),
-                    String::from("--:--"),
-                    String::from("-"),
-                    ThumbnailState::NotRequested,
-                )
-            };
-        let (detail_title, detail_channel, detail_description) =
-            detail_pane_text(self.details.get(), &detail_id, base_title, base_channel);
-
-        Window::new(
-            "YouTube",
-            vstack! {
-                hstack! {
-                    Text::new("YouTube")
-                        .font_size(20.0)
-                        .color(Color::rgb(24u8, 28u8, 34u8))
-                        .frame_width(92.0),
-                    TextField::new(self.query.clone())
-                        .placeholder("Search YouTube")
-                        .font_size(14.0)
-                        .padding(8.0)
-                        .blur_on_submit(true)
-                        .on_submit({
-                            let query = self.query.clone();
-                            let results = self.results.clone();
-                            let selected = self.selected.clone();
-                            let page = self.page.clone();
-                            let status = self.status.clone();
-                            let has_more = self.has_more.clone();
-                            let loading_more = self.loading_more.clone();
-                            let details = self.details.clone();
-                            move || perform_search(query.clone(), results.clone(), selected.clone(), page.clone(), status.clone(), has_more.clone(), loading_more.clone(), details.clone())
-                        })
-                    .frame(660.0, 34.0),
-                    Button::new("Search")
-                        .font_size(12.0)
-                        .padding(7.0)
-                        .on_click({
-                            let query = self.query.clone();
-                            let results = self.results.clone();
-                            let selected = self.selected.clone();
-                            let page = self.page.clone();
-                            let status = self.status.clone();
-                            let has_more = self.has_more.clone();
-                            let loading_more = self.loading_more.clone();
-                            let details = self.details.clone();
-                            move || perform_search(query.clone(), results.clone(), selected.clone(), page.clone(), status.clone(), has_more.clone(), loading_more.clone(), details.clone())
-                        }),
-                },
-                hstack! {
-                    vstack! {
-                        hstack! {
-                            Text::new(format!("{} results{}", results_len, if has_more { "+" } else { "" }))
-                                .font_size(12.0)
-                                .color(Color::gray(0.35))
-                                .frame_width(110.0),
-                            Text::new(format!("page {}/{}", page + 1, page_count))
-                                .font_size(12.0)
-                                .color(Color::gray(0.35))
-                                .frame_width(90.0),
-                            Text::new(format!("selected {}", if results_len == 0 { 0 } else { selected.saturating_add(1) }))
-                                .font_size(12.0)
-                                .color(Color::gray(0.35))
-                                .frame_width(110.0),
-                            Spacer::new(),
-                            Button::new("Prev")
-                                .font_size(11.0)
-                                .padding(5.0)
-                                .on_click({
-                                    let results = self.results.clone();
-                                    let page = self.page.clone();
-                                    let selected = self.selected.clone();
-                                    let status = self.status.clone();
-                                    let details = self.details.clone();
-                                    move || previous_page(results.clone(), page.clone(), selected.clone(), status.clone(), details.clone())
-                                }),
-                            Button::new("Next")
-                                .font_size(11.0)
-                                .padding(5.0)
-                                .on_click({
-                                    let results = self.results.clone();
-                                    let page = self.page.clone();
-                                    let selected = self.selected.clone();
-                                    let status = self.status.clone();
-                                    let has_more = self.has_more.clone();
-                                    let loading_more = self.loading_more.clone();
-                                    let details = self.details.clone();
-                                    move || next_page(results.clone(), page.clone(), selected.clone(), status.clone(), has_more.clone(), loading_more.clone(), details.clone())
-                                }),
-                        }
-                        .frame_width(620.0),
-                        vstack! {
-                            self.result_row(0),
-                            self.result_row(1),
-                            self.result_row(2),
-                            self.result_row(3),
-                            self.result_row(4),
-                            self.result_row(5),
-                            self.result_row(6),
-                            self.result_row(7),
-                        },
-                    }
-                    .focusable(self.list_focused.clone())
-                    .on_key({
-                        let results = self.results.clone();
-                        let selected = self.selected.clone();
-                        let page = self.page.clone();
-                        let status = self.status.clone();
-                        let list_focused = self.list_focused.clone();
-                        let has_more = self.has_more.clone();
-                        let loading_more = self.loading_more.clone();
-                        let details = self.details.clone();
-                        move |event| handle_list_key(event, results.clone(), selected.clone(), page.clone(), status.clone(), list_focused.clone(), has_more.clone(), loading_more.clone(), details.clone())
-                    })
-                    .frame_width(630.0),
-                    zstack! {
-                        scarlet_ui::Rectangle::new()
-                            .fill(Color::rgb(247u8, 248u8, 250u8))
-                            .corner_radius(6.0)
-                            .border(1.0, Color::rgb(218u8, 222u8, 228u8)),
-                        vstack! {
-                            thumbnail_image(detail_thumb)
-                                .fit_mode(ImageFit::Fill)
-                                .frame(272.0, 153.0)
-                                .clip_radius(5.0),
-                            Text::new(detail_title)
-                                .font_size(15.0)
-                                .color(Color::rgb(20u8, 24u8, 30u8))
-                                .frame_width(272.0),
-                            Text::new(detail_channel)
-                                .font_size(12.0)
-                                .color(Color::gray(0.38))
-                                .frame_width(272.0),
-                            hstack! {
-                                Text::new(detail_duration)
-                                    .font_size(12.0)
-                                    .color(Color::gray(0.34))
-                                    .frame_width(74.0),
-                                Text::new(detail_id)
-                                    .font_size(11.0)
-                                    .color(Color::gray(0.48))
-                                    .frame_width(176.0),
-                            },
-                            Text::new(detail_description)
-                                .font_size(DETAIL_DESCRIPTION_FONT_SIZE)
-                                .color(Color::gray(0.28))
-                                .frame_width(DETAIL_TEXT_WIDTH as f32),
-                            Spacer::new(),
-                        }
-                        .padding(12.0)
-                    }
-                    .frame(302.0, 620.0),
-                }
-                .frame_width(948.0),
-                Text::new(self.status.get())
-                    .font_size(12.0)
-                    .color(Color::gray(0.36))
-                    .frame_width(948.0),
-            }
-            .padding(12.0)
-            .background(Color::rgb(240u8, 242u8, 245u8))
-            .frame(f32::INFINITY, f32::INFINITY),
-        )
-        .app_id("org.scarlet-os.yt-gui")
-        .size(Size::new(990.0, 760.0))
+        self.window_view()
     }
-
+    fn on_window_created(
+        &mut self,
+        _: &scarlet_ui::WindowContext,
+        window: &mut dyn scarlet_ui::PlatformWindow,
+    ) {
+        let _ = window.set_gamepad_input(false, true);
+        self.list_focused.set(true);
+    }
+    fn on_window_resize(&mut self, _: &scarlet_ui::WindowContext, width: u32, height: u32) {
+        self.bounds
+            .set(content_size(Size::new(width as f32, height as f32)));
+    }
+    fn on_window_sync(
+        &mut self,
+        _: &scarlet_ui::WindowContext,
+        window: &mut dyn scarlet_ui::PlatformWindow,
+    ) {
+        if self.fit_window.get() {
+            self.fit_window.set(false);
+            if scarlet_ui::current_input_environment().windowing_mode()
+                != Some(scarlet_ui::WindowingMode::Focused)
+                && let Ok((width, height)) = window.get_screen_size()
+            {
+                let desired = window.size();
+                let _ = window.resize(
+                    (desired.width as u32).min(width.saturating_sub(16)).max(1),
+                    (desired.height as u32)
+                        .min(height.saturating_sub(48))
+                        .max(1),
+                );
+            }
+        }
+        // Read the per-window logical size, including compositor-driven changes.
+        let size = content_size(window.managed_size());
+        if self.bounds.get() != size {
+            self.bounds.set(size);
+        }
+    }
+    fn on_active_app_changed(&mut self, _: u32, app_name: &str, _: &str) {
+        if app_name != "org.scarlet-os.yt-gui" {
+            self.confirm_held.set(false);
+        }
+    }
     fn debug_logging(&self) -> bool {
         false
     }
-
     fn on_idle(&mut self) {
         while let Some(message) = pop_gui_message() {
             self.handle_message(message);
@@ -631,6 +646,9 @@ impl YtGuiApp {
                 *YT_GUI_PLAYBACK_ACTIVE
                     .lock()
                     .expect("yt gui mutex poisoned") = false;
+                self.screen.set(0);
+                self.control.set(1);
+                self.list_focused.set(true);
                 match result {
                     Ok(()) => self.status.set(format!("Playback finished: {}", title)),
                     Err(error) => self
@@ -639,102 +657,6 @@ impl YtGuiApp {
                 }
             }
         }
-    }
-}
-
-fn handle_list_key(
-    event: KeyEvent,
-    results: State<Vec<GuiSearchResult>>,
-    selected: State<usize>,
-    page: State<usize>,
-    status: State<String>,
-    list_focused: State<bool>,
-    has_more: State<bool>,
-    loading_more: State<bool>,
-    details: State<DetailState>,
-) -> bool {
-    match event {
-        KeyEvent::Pressed {
-            keycode: KeyCode::Tab,
-            ..
-        } => {
-            list_focused.set(false);
-            true
-        }
-        KeyEvent::Pressed {
-            keycode: KeyCode::Enter,
-            ..
-        } => {
-            play_selected(results, selected, status);
-            true
-        }
-        KeyEvent::Pressed {
-            keycode: KeyCode::Down,
-            ..
-        } => {
-            move_selection(
-                results,
-                selected,
-                page,
-                status,
-                has_more,
-                loading_more,
-                details,
-                1,
-            );
-            true
-        }
-        KeyEvent::Pressed {
-            keycode: KeyCode::Up,
-            ..
-        } => {
-            move_selection(
-                results,
-                selected,
-                page,
-                status,
-                has_more,
-                loading_more,
-                details,
-                -1,
-            );
-            true
-        }
-        KeyEvent::Pressed {
-            keycode: KeyCode::PageDown,
-            ..
-        }
-        | KeyEvent::Pressed {
-            keycode: KeyCode::Right,
-            ..
-        } => {
-            next_page(
-                results,
-                page,
-                selected,
-                status,
-                has_more,
-                loading_more,
-                details,
-            );
-            true
-        }
-        KeyEvent::Pressed {
-            keycode: KeyCode::PageUp,
-            ..
-        }
-        | KeyEvent::Pressed {
-            keycode: KeyCode::Left,
-            ..
-        } => {
-            previous_page(results, page, selected, status, details);
-            true
-        }
-        KeyEvent::Pressed {
-            keycode: KeyCode::Escape,
-            ..
-        } => exit(0),
-        _ => false,
     }
 }
 
@@ -755,6 +677,8 @@ fn perform_search(
     }
 
     let generation_id = next_generation();
+    #[cfg(test)]
+    let _ = generation_id;
     results.set(Vec::new());
     selected.set(0);
     page.set(0);
@@ -764,6 +688,7 @@ fn perform_search(
     *YT_GUI_SEARCH_CURSOR.lock().expect("yt gui mutex poisoned") = None;
     status.set(format!("Searching: {}", query_text));
     println!("[yt-gui] searching: {}", query_text);
+    #[cfg(not(test))]
     thread::spawn(move || {
         let result = load_search_page(YoutubeSearchCursor::new(&query_text), PAGE_SIZE);
         push_gui_message(GuiMessage::SearchFinished {
@@ -799,6 +724,7 @@ fn play_selected(
     }
     status.set(format!("Starting playback: {}", title));
     println!("[yt-gui] spawn: yt --title <title> {}", url);
+    #[cfg(not(test))]
     thread::spawn(move || {
         let result = Command::new("/bin/yt")
             .args(["--title", &title, &url])
@@ -1288,6 +1214,7 @@ fn detail_pane_text(
     }
 }
 
+#[cfg(not(test))]
 fn initial_query() -> String {
     let args: Vec<String> = std::env::args().collect();
     let mut query = String::new();
@@ -1300,6 +1227,7 @@ fn initial_query() -> String {
     query
 }
 
+#[cfg(not(test))]
 fn main() {
     println!("[yt-gui] Starting YouTube GUI");
 
@@ -1307,5 +1235,339 @@ fn main() {
     match app.run() {
         Ok(()) => println!("[yt-gui] exited"),
         Err(error) => println!("[yt-gui] error: {}", error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scarlet_ui::SceneBuilder;
+    use scarlet_ui::event::KeyModifiers;
+    use scarlet_ui::pipeline::RenderingPipeline;
+    fn press(app: &YtGuiApp, keycode: KeyCode) {
+        assert!(app.handle_key(KeyEvent::Pressed {
+            keycode,
+            modifiers: KeyModifiers::empty()
+        }));
+        app.handle_key(KeyEvent::Released {
+            keycode,
+            modifiers: KeyModifiers::empty(),
+        });
+    }
+    fn button_bounds(
+        element: &dyn scarlet_ui::Element,
+        label: &str,
+        origin: scarlet_ui::Point,
+    ) -> Option<scarlet_ui::Rect> {
+        let position = element.position();
+        let origin = scarlet_ui::Point {
+            x: origin.x + position.x,
+            y: origin.y + position.y,
+        };
+        if let Some(button)=element.as_any().downcast_ref::<scarlet_ui::RenderElement<Button,scarlet_ui::views::ButtonRenderObject>>() {
+            if button.view().label()==label {
+                let size=element.bounds().size;
+                return Some(scarlet_ui::Rect::from_xywh(origin.x,origin.y,size.width,size.height));
+            }
+        }
+        element
+            .children()
+            .iter()
+            .find_map(|child| button_bounds(child.as_ref(), label, origin))
+    }
+    fn refresh_window(app: &YtGuiApp, pipeline: &mut RenderingPipeline, width: f32, height: f32) {
+        for _ in 0..3 {
+            let mut scenes = SceneBuilder::new();
+            app.scenes().build(&mut scenes);
+            pipeline.set_root(scenes.into_declarations().remove(0).view.create_element());
+            pipeline.layout_initial();
+            pipeline.resize(Size::new(width, height));
+            pipeline.render();
+        }
+    }
+    fn fixture() -> YtGuiApp {
+        // These tests exercise UI state, never Scarlet syscalls or YouTube I/O.
+        *YT_GUI_DETAILS_ACTIVE.lock().unwrap() = true;
+        *YT_GUI_PLAYBACK_ACTIVE.lock().unwrap() = false;
+        let app = YtGuiApp::new("Scarlet OS".into());
+        app.results.set(
+            (0..29)
+                .map(|i| GuiSearchResult {
+                    video_id: format!("video-{i}"),
+                    title: format!("Scarlet OS · Episode {}", i + 1),
+                    channel: Some("Scarlet Studio".into()),
+                    duration: Some("12:34".into()),
+                    thumbnail: ThumbnailState::NotRequested,
+                    thumbnail_url: None,
+                })
+                .collect(),
+        );
+        app.control.set(1);
+        app.list_focused.set(true);
+        app.status.set("Ready to watch".into());
+        app
+    }
+    #[test]
+    fn confirm_repeat_cannot_play_when_opening_a_video() {
+        let app = fixture();
+        let event = KeyEvent::Pressed {
+            keycode: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+        };
+        app.handle_key(event);
+        assert_eq!(app.screen.get(), 1);
+        assert!(!*YT_GUI_PLAYBACK_ACTIVE.lock().unwrap());
+        app.status.set("held guard".into());
+        for _ in 0..12 {
+            app.handle_key(event);
+        }
+        assert_eq!(app.status.get(), "held guard");
+        press(&app, KeyCode::Escape);
+        assert_eq!(app.screen.get(), 0);
+        assert_eq!(app.selected.get(), 0);
+        assert_eq!(app.control.get(), 1);
+    }
+    #[test]
+    fn selection_pages_back_and_rotation_preserve_video() {
+        let mut app = fixture();
+        app.page_bounds.set(Size::new(520.0, 580.0));
+        for _ in 0..6 {
+            press(&app, KeyCode::Right);
+        }
+        for _ in 0..3 {
+            press(&app, KeyCode::Down);
+        }
+        assert_eq!((app.selected.get(), app.page.get()), (12, 1));
+        press(&app, KeyCode::Enter);
+        assert_eq!(app.screen.get(), 1);
+        press(&app, KeyCode::Escape);
+        assert_eq!((app.selected.get(), app.page.get()), (12, 1));
+        let ctx = scarlet_ui::WindowContext {
+            window_id: scarlet_ui::WindowId::generate(),
+            scene_key: "main".into(),
+            pipeline_id: scarlet_ui::pipeline::PipelineId::generate(),
+            platform_window_id: 1,
+            is_primary: true,
+        };
+        app.on_window_resize(&ctx, 390, 844);
+        assert_eq!(app.selected.get(), 12);
+        app.on_window_resize(&ctx, 844, 390);
+        assert_eq!(app.selected.get(), 12);
+        for _ in 0..40 {
+            press(&app, KeyCode::Down);
+        }
+        assert_eq!(app.selected.get(), 28);
+        press(&app, KeyCode::Escape);
+        assert_eq!(app.control.get(), 0);
+    }
+    #[test]
+    fn platform_search_cancellation_restores_focus_and_query() {
+        let app = fixture();
+        app.query.set("猫".into());
+        app.control.set(0);
+        press(&app, KeyCode::Enter);
+        assert_eq!(app.screen.get(), 2);
+        assert!(!app.list_focused.get());
+        app.cancel_search();
+        assert_eq!(app.screen.get(), 0);
+        assert_eq!(app.control.get(), 0);
+        assert_eq!(app.query.get(), "猫");
+        assert!(app.list_focused.get());
+    }
+    #[test]
+    fn stale_search_cannot_replace_new_results_and_playback_restores_focus() {
+        let app = fixture();
+        let selected = app.selected.get();
+        app.handle_message(GuiMessage::SearchFinished {
+            generation: current_generation() + 1,
+            result: Err(SearchLoadError {
+                message: "obsolete".into(),
+                cursor: None,
+            }),
+        });
+        assert_eq!(app.results.get().len(), 29);
+        assert_eq!(app.selected.get(), selected);
+        app.screen.set(1);
+        app.handle_message(GuiMessage::PlaybackFinished {
+            title: "Episode 1".into(),
+            result: Ok(()),
+        });
+        assert_eq!(app.screen.get(), 0);
+        assert_eq!(app.control.get(), 1);
+        assert!(app.list_focused.get());
+    }
+    #[test]
+    fn native_touch_cancel_and_video_selection_then_play() {
+        use scarlet_ui::Event;
+        use scarlet_ui::event::{TouchChange, TouchFrame, TouchPhase};
+        let app = fixture();
+        let mut pipeline = RenderingPipeline::new();
+        pipeline.set_root(
+            app.video_card(0, app.selected_result().unwrap(), 300.0, false)
+                .create_element(),
+        );
+        pipeline.layout_initial();
+        let touch = |serial, phase, x, y| {
+            Event::TouchFrame(TouchFrame {
+                seat_id: 0,
+                serial,
+                time_ns: serial * 16_000_000,
+                changes: vec![TouchChange {
+                    seat_id: 0,
+                    serial,
+                    time_ns: serial * 16_000_000,
+                    id: 1,
+                    phase,
+                    x,
+                    y,
+                    pressure: None,
+                    touch_major: None,
+                }],
+            })
+        };
+        pipeline.handle_event(&touch(1, TouchPhase::Down, 100, 50));
+        pipeline.handle_event(&touch(2, TouchPhase::Cancel, 100, 50));
+        assert_eq!(app.screen.get(), 0);
+        pipeline.handle_event(&touch(3, TouchPhase::Down, 100, 50));
+        pipeline.handle_event(&touch(4, TouchPhase::Up, 100, 50));
+        assert_eq!(app.screen.get(), 1);
+        assert!(!*YT_GUI_PLAYBACK_ACTIVE.lock().unwrap());
+        pipeline.set_root(
+            app.detail_view(280.0, 420.0)
+                .frame(300.0, 420.0)
+                .create_element(),
+        );
+        pipeline.layout_initial();
+        pipeline.resize(Size::new(300.0, 420.0));
+        let rect = button_bounds(
+            pipeline.element_tree().root().unwrap(),
+            "Play video",
+            scarlet_ui::Point::ZERO,
+        )
+        .expect("one native playback button");
+        assert_eq!(rect.size.height, 28.0, "desktop uses compact controls");
+        assert!(
+            rect.origin.y + rect.size.height <= 420.0,
+            "play remains within the viewport"
+        );
+        let x = (rect.origin.x + rect.size.width / 2.0) as i32;
+        let y = (rect.origin.y + rect.size.height / 2.0) as i32;
+        pipeline.handle_event(&touch(5, TouchPhase::Down, x, y));
+        pipeline.handle_event(&touch(6, TouchPhase::Up, x, y));
+        assert!(
+            *YT_GUI_PLAYBACK_ACTIVE.lock().unwrap(),
+            "native Play video button starts playback"
+        );
+        pipeline.teardown();
+    }
+
+    #[test]
+    fn native_search_focus_release_submit_and_cancel() {
+        use scarlet_ui::Event;
+        let app = fixture();
+        app.control.set(0);
+        let mut pipeline = RenderingPipeline::new();
+        refresh_window(&app, &mut pipeline, 800.0, 600.0);
+        assert!(
+            button_bounds(
+                pipeline.element_tree().root().unwrap(),
+                "Play video",
+                scarlet_ui::Point::ZERO
+            )
+            .is_none(),
+            "browse contains no playback buttons"
+        );
+        let key = |keycode, pressed| {
+            Event::Keyboard(if pressed {
+                KeyEvent::Pressed {
+                    keycode,
+                    modifiers: KeyModifiers::empty(),
+                }
+            } else {
+                KeyEvent::Released {
+                    keycode,
+                    modifiers: KeyModifiers::empty(),
+                }
+            })
+        };
+        pipeline.handle_event(&key(KeyCode::Enter, true));
+        assert_eq!(app.screen.get(), 2);
+        refresh_window(&app, &mut pipeline, 800.0, 600.0);
+        pipeline.handle_event(&key(KeyCode::Enter, false));
+        assert!(
+            !app.confirm_held.get(),
+            "release reaches the owner after TextField gains focus"
+        );
+        pipeline.handle_event(&key(KeyCode::Escape, true));
+        assert_eq!(app.screen.get(), 0);
+        assert_eq!(app.query.get(), "Scarlet OS");
+        refresh_window(&app, &mut pipeline, 800.0, 600.0);
+        pipeline.handle_event(&key(KeyCode::Enter, true));
+        refresh_window(&app, &mut pipeline, 800.0, 600.0);
+        pipeline.handle_event(&key(KeyCode::Enter, false));
+        refresh_window(&app, &mut pipeline, 800.0, 600.0);
+        pipeline.handle_event(&key(KeyCode::Enter, true));
+        assert_eq!(app.screen.get(), 0, "native submit returns to results");
+        assert!(app.results.get().is_empty());
+        pipeline.handle_event(&key(KeyCode::Enter, true));
+        assert!(
+            !*YT_GUI_PLAYBACK_ACTIVE.lock().unwrap(),
+            "repeat submit cannot launch a video"
+        );
+        pipeline.handle_event(&key(KeyCode::Enter, false));
+        refresh_window(&app, &mut pipeline, 800.0, 600.0);
+        assert!(
+            pipeline.element_tree().focused_text_input_state().is_none(),
+            "submission gives focus back to browsing"
+        );
+        pipeline.teardown();
+    }
+
+    #[test]
+    fn render_every_screen_at_console_tablet_and_small_sizes() {
+        let app = fixture();
+        let directory = std::env::var("YT_QA_DIR").ok();
+        for (width, height) in [
+            (1024, 680),
+            (1280, 720),
+            (768, 1024),
+            (390, 844),
+            (844, 390),
+            (320, 240),
+        ] {
+            for screen in 0..3 {
+                app.bounds
+                    .set(content_size(Size::new(width as f32, height as f32)));
+                app.screen.set(screen);
+                let mut pipeline = RenderingPipeline::new();
+                for _ in 0..3 {
+                    let mut scenes = SceneBuilder::new();
+                    app.scenes().build(&mut scenes);
+                    pipeline.set_root(scenes.into_declarations().remove(0).view.create_element());
+                    pipeline.layout_initial();
+                    pipeline.resize(Size::new(width as f32, height as f32));
+                    pipeline.render();
+                }
+                pipeline.request_redraw();
+                let buffer = pipeline.render().expect("CPU rendering");
+                assert!(buffer.as_slice().iter().any(|p| *p != 0));
+                if let Some(directory) = &directory {
+                    let mut bytes = format!("P6\n{width} {height}\n255\n").into_bytes();
+                    for pixel in buffer.as_slice() {
+                        bytes.extend_from_slice(&[
+                            ((pixel >> 16) & 255) as u8,
+                            ((pixel >> 8) & 255) as u8,
+                            (pixel & 255) as u8,
+                        ]);
+                    }
+                    std::fs::write(
+                        format!("{directory}/pipeline-{width}x{height}-{screen}.ppm"),
+                        bytes,
+                    )
+                    .unwrap();
+                }
+                pipeline.teardown();
+            }
+        }
     }
 }
