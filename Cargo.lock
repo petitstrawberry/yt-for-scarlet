@@ -25,22 +25,22 @@ dependencies = [
 [[package]]
 name = "adreno-a6xx-layout"
 version = "0.1.0"
-source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git#fcff35b4b01ef71631f163d44302460abb3a4f00"
+source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git?rev=ed98fe5c73d476cde26d057e677acbfaa4defd77#ed98fe5c73d476cde26d057e677acbfaa4defd77"
 
 [[package]]
 name = "adreno-a6xx-pm4"
 version = "0.1.0"
-source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git#fcff35b4b01ef71631f163d44302460abb3a4f00"
+source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git?rev=ed98fe5c73d476cde26d057e677acbfaa4defd77#ed98fe5c73d476cde26d057e677acbfaa4defd77"
 
 [[package]]
 name = "adreno-a6xx-shader-pack"
 version = "0.1.0"
-source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git#fcff35b4b01ef71631f163d44302460abb3a4f00"
+source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git?rev=ed98fe5c73d476cde26d057e677acbfaa4defd77#ed98fe5c73d476cde26d057e677acbfaa4defd77"
 
 [[package]]
 name = "adreno-a6xx-submit-wire"
 version = "0.1.0"
-source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git#fcff35b4b01ef71631f163d44302460abb3a4f00"
+source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git?rev=ed98fe5c73d476cde26d057e677acbfaa4defd77#ed98fe5c73d476cde26d057e677acbfaa4defd77"
 dependencies = [
  "adreno-a6xx-shader-pack",
 ]
@@ -72,7 +72,7 @@ dependencies = [
  "log",
  "ndk",
  "ndk-context",
- "ndk-sys 0.6.0+11769913",
+ "ndk-sys",
  "num_enum",
  "thiserror 2.0.20",
 ]
@@ -82,15 +82,6 @@ name = "android-properties"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
-
-[[package]]
-name = "android_system_properties"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "arrayref"
@@ -109,15 +100,6 @@ name = "as-raw-xcb-connection"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
-
-[[package]]
-name = "ash"
-version = "0.38.0+1.3.281"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bb44936d800fea8f016d7f2311c6a4f97aebd5dc86f09906139ec848cf3a46f"
-dependencies = [
- "libloading",
-]
 
 [[package]]
 name = "atomic-waker"
@@ -157,15 +139,6 @@ name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
-name = "block"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 
 [[package]]
 name = "block2"
@@ -383,15 +356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "document-features"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
-dependencies = [
- "litrs",
-]
-
-[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -487,10 +451,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
 
 [[package]]
-name = "foldhash"
-version = "0.1.5"
+name = "fixedbitset"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "foldhash"
@@ -509,11 +473,10 @@ dependencies = [
 
 [[package]]
 name = "fontique"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6688bc1294fe7117d788937b6c53480169b29c566954af490830d4c09da9516a"
+version = "0.11.0"
+source = "git+https://github.com/linebender/parley?rev=dbcdc7d214f28fb7ec16bb17b34bf0aeb85d0fc7#dbcdc7d214f28fb7ec16bb17b34bf0aeb85d0fc7"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown",
  "linebender_resource_handle",
  "memmap2",
  "objc2 0.6.4",
@@ -524,8 +487,8 @@ dependencies = [
  "read-fonts",
  "roxmltree",
  "smallvec",
- "windows 0.62.2",
- "windows-core 0.62.2",
+ "windows",
+ "windows-core",
  "yeslogic-fontconfig-sys",
 ]
 
@@ -625,103 +588,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "gl_generator"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d"
-dependencies = [
- "khronos_api",
- "log",
- "xml-rs",
-]
-
-[[package]]
-name = "glow"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5e5ea60d70410161c8bf5da3fdfeaa1c72ed2c15f8bbb9d19fe3a4fad085f08"
-dependencies = [
- "js-sys",
- "slotmap",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "glutin_wgl_sys"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e"
-dependencies = [
- "gl_generator",
-]
-
-[[package]]
-name = "gpu-alloc"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45cf04b2726f02df5508c6de726acdc90cdf97ac771a9a0ffd8ba10a6e696bf9"
-dependencies = [
- "bitflags 2.13.1",
- "gpu-alloc-types",
-]
-
-[[package]]
-name = "gpu-alloc-types"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2bbed164dd10ed526c2e4fe3e721ca4a71c61730e5aafac6844b417b3227058"
-dependencies = [
- "bitflags 2.13.1",
-]
-
-[[package]]
-name = "gpu-allocator"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c151a2a5ef800297b4e79efa4f4bec035c5f51d5ae587287c9b952bdf734cacd"
-dependencies = [
- "log",
- "presser",
- "thiserror 1.0.69",
- "windows 0.58.0",
-]
-
-[[package]]
-name = "gpu-descriptor"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b89c83349105e3732062a895becfc71a8f921bb71ecbbdd8ff99263e3b53a0ca"
-dependencies = [
- "bitflags 2.13.1",
- "gpu-descriptor-types",
- "hashbrown 0.15.5",
-]
-
-[[package]]
-name = "gpu-descriptor-types"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdf242682df893b86f33a73828fb09ca4b2d3bb6cc95249707fc684d27484b91"
-dependencies = [
- "bitflags 2.13.1",
-]
-
-[[package]]
 name = "gpu-raw"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 dependencies = [
+ "scarlet-abi",
  "scarlet-os",
-]
-
-[[package]]
-name = "hashbrown"
-version = "0.15.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
-dependencies = [
- "foldhash 0.1.5",
 ]
 
 [[package]]
@@ -730,7 +602,7 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
- "foldhash 0.2.0",
+ "foldhash",
 ]
 
 [[package]]
@@ -758,7 +630,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
 dependencies = [
  "equivalent",
- "hashbrown 0.17.1",
+ "hashbrown",
 ]
 
 [[package]]
@@ -841,23 +713,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "khronos-egl"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6aae1df220ece3c0ada96b8153459b67eebe9ae9212258bb0134ae60416fdf76"
-dependencies = [
- "libc",
- "libloading",
- "pkg-config",
-]
-
-[[package]]
-name = "khronos_api"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
-
-[[package]]
 name = "kurbo"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -927,33 +782,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
-name = "litrs"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
-
-[[package]]
-name = "lock_api"
-version = "0.4.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
-dependencies = [
- "scopeguard",
-]
-
-[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
-name = "malloc_buf"
-version = "0.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
+name = "maxwell-shader-pack"
+version = "0.1.0"
+source = "git+https://github.com/petitstrawberry/scarlet-project-switch?rev=5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9#5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9"
+
+[[package]]
+name = "maxwell-submit-wire"
+version = "0.1.0"
+source = "git+https://github.com/petitstrawberry/scarlet-project-switch?rev=5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9#5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9"
 dependencies = [
- "libc",
+ "maxwell-shader-pack",
 ]
 
 [[package]]
@@ -972,21 +816,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metal"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f569fb946490b5743ad69813cb19629130ce9374034abe31614a36402d18f99e"
-dependencies = [
- "bitflags 2.13.1",
- "block",
- "core-graphics-types",
- "foreign-types",
- "log",
- "objc",
- "paste",
-]
-
-[[package]]
 name = "naga"
 version = "24.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1000,6 +829,7 @@ dependencies = [
  "hexf-parse",
  "indexmap",
  "log",
+ "petgraph",
  "rustc-hash",
  "spirv",
  "strum",
@@ -1017,7 +847,7 @@ dependencies = [
  "bitflags 2.13.1",
  "jni-sys 0.3.1",
  "log",
- "ndk-sys 0.6.0+11769913",
+ "ndk-sys",
  "num_enum",
  "raw-window-handle",
  "thiserror 1.0.69",
@@ -1028,15 +858,6 @@ name = "ndk-context"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
-
-[[package]]
-name = "ndk-sys"
-version = "0.5.0+25.2.9519653"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c196769dd60fd4f363e11d948139556a344e79d451aeb2fa2fd040738ef7691"
-dependencies = [
- "jni-sys 0.3.1",
-]
 
 [[package]]
 name = "ndk-sys"
@@ -1076,15 +897,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "objc"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "915b1b472bc21c53464d6c8461c9d3af805ba1ef837e1cac254428f4a77177b1"
-dependencies = [
- "malloc_buf",
 ]
 
 [[package]]
@@ -1384,15 +1196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ordered-float"
-version = "4.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1402,45 +1205,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "parking_lot"
-version = "0.12.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
-dependencies = [
- "lock_api",
- "parking_lot_core",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.9.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
-dependencies = [
- "cfg-if",
- "libc",
- "redox_syscall 0.5.18",
- "smallvec",
- "windows-link",
-]
-
-[[package]]
 name = "parlance"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b6937eda350acc1a5d05872c3cbf99fe78619c269096e2be3d4a350058639d5"
-
-[[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+source = "git+https://github.com/linebender/parley?rev=dbcdc7d214f28fb7ec16bb17b34bf0aeb85d0fc7#dbcdc7d214f28fb7ec16bb17b34bf0aeb85d0fc7"
 
 [[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "petgraph"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
+dependencies = [
+ "fixedbitset",
+ "indexmap",
+]
 
 [[package]]
 name = "pin-project"
@@ -1495,18 +1278,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pollster"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
-
-[[package]]
-name = "presser"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
-
-[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1523,12 +1294,6 @@ checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
-
-[[package]]
-name = "profiling"
-version = "1.0.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "quick-xml"
@@ -1559,12 +1324,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "range-alloc"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 
 [[package]]
 name = "raw-window-handle"
@@ -1609,12 +1368,6 @@ checksum = "d678d17679829e73d371e96880897e98fee2ded7acc0a50bdf8af2affa4b2fe5"
 dependencies = [
  "bitflags 2.13.1",
 ]
-
-[[package]]
-name = "renderdoc-sys"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "ring"
@@ -1728,14 +1481,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "sbus"
+version = "1.0.0"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
+
+[[package]]
+name = "sbus-client"
+version = "1.0.0"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
+dependencies = [
+ "sbus",
+ "scarlet-os",
+]
+
+[[package]]
 name = "scarlet-abi"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
+
+[[package]]
+name = "scarlet-desktop-config"
+version = "1.0.0"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 
 [[package]]
 name = "scarlet-os"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 dependencies = [
  "scarlet-abi",
  "scarlet-rt",
@@ -1745,15 +1517,23 @@ dependencies = [
 [[package]]
 name = "scarlet-rt"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 dependencies = [
  "scarlet-sys",
 ]
 
 [[package]]
+name = "scarlet-scroll-motion"
+version = "0.1.0"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "scarlet-sys"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 dependencies = [
  "scarlet-abi",
 ]
@@ -1761,7 +1541,7 @@ dependencies = [
 [[package]]
 name = "scarlet-ui"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
  "scarlet-ui-core",
  "scarlet-ui-platform-sws",
@@ -1771,13 +1551,14 @@ dependencies = [
 [[package]]
 name = "scarlet-ui-core"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
  "ab_glyph",
  "bitflags 2.13.1",
  "fontique",
  "libm",
  "raw-window-handle",
+ "scarlet-scroll-motion",
  "scarlet-ui-icons-tabler",
  "scarlet-ui-macros",
  "unicode-script",
@@ -1788,7 +1569,7 @@ dependencies = [
 [[package]]
 name = "scarlet-ui-icons-tabler"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
  "svgtypes",
 ]
@@ -1796,7 +1577,7 @@ dependencies = [
 [[package]]
 name = "scarlet-ui-macros"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1806,8 +1587,10 @@ dependencies = [
 [[package]]
 name = "scarlet-ui-platform-sws"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
+ "sbus-client",
+ "scarlet-desktop-config",
  "scarlet-ui-core",
  "scarlet-ui-renderer-sgfx",
  "sgfx",
@@ -1818,9 +1601,12 @@ dependencies = [
 [[package]]
 name = "scarlet-ui-platform-winit"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
+ "block2",
+ "objc2 0.5.2",
  "objc2-app-kit",
+ "objc2-foundation 0.2.2",
  "objc2-quartz-core 0.2.2",
  "scarlet-ui-core",
  "scarlet-ui-renderer-sgfx",
@@ -1831,7 +1617,7 @@ dependencies = [
 [[package]]
 name = "scarlet-ui-renderer-sgfx"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/scarlet-ui#c980c960b073b6a7c71a2ab501210e3b3a570e77"
+source = "git+https://github.com/petitstrawberry/scarlet-ui?rev=6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6#6dbc9d87563d7d1dba529f04e7fbdfc850ca6ab6"
 dependencies = [
  "libm",
  "scarlet-ui-core",
@@ -1859,12 +1645,6 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
-
-[[package]]
-name = "scopeguard"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sctk-adwaita"
@@ -1917,20 +1697,36 @@ dependencies = [
 [[package]]
 name = "sgfx"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/sgfx#fbc0cf2267b1c37377cb07670ae6b70a1a0ab168"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=360523603f01c04cc8ff24cd882a8ba34d51414d#360523603f01c04cc8ff24cd882a8ba34d51414d"
 dependencies = [
  "gpu-raw",
- "raw-window-handle",
+ "scarlet-os",
+ "sgfx-backend-abi",
+ "sgfx-backend-loader",
  "sgfx-backend-scarlet-adreno",
+ "sgfx-backend-scarlet-maxwell",
  "sgfx-backend-scarlet-virgl",
- "sgfx-backend-wgpu",
+ "sgfx-backend-scarlet-virgl-compat",
  "sgfx-core",
+]
+
+[[package]]
+name = "sgfx-backend-abi"
+version = "1.0.0"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=040dbb5cf42b75489504e1765183d37f6131f54c#040dbb5cf42b75489504e1765183d37f6131f54c"
+
+[[package]]
+name = "sgfx-backend-loader"
+version = "1.0.0"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=360523603f01c04cc8ff24cd882a8ba34d51414d#360523603f01c04cc8ff24cd882a8ba34d51414d"
+dependencies = [
+ "sgfx-backend-abi",
 ]
 
 [[package]]
 name = "sgfx-backend-scarlet-adreno"
 version = "0.1.0"
-source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git#fcff35b4b01ef71631f163d44302460abb3a4f00"
+source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git?rev=ed98fe5c73d476cde26d057e677acbfaa4defd77#ed98fe5c73d476cde26d057e677acbfaa4defd77"
 dependencies = [
  "adreno-a6xx-layout",
  "adreno-a6xx-submit-wire",
@@ -1941,9 +1737,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sgfx-backend-scarlet-maxwell"
+version = "0.1.0"
+source = "git+https://github.com/petitstrawberry/scarlet-project-switch?rev=5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9#5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9"
+dependencies = [
+ "gpu-raw",
+ "maxwell-submit-wire",
+ "scarlet-os",
+ "sgfx-codegen-maxwell",
+ "sgfx-core",
+]
+
+[[package]]
 name = "sgfx-backend-scarlet-virgl"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/sgfx#fbc0cf2267b1c37377cb07670ae6b70a1a0ab168"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=360523603f01c04cc8ff24cd882a8ba34d51414d#360523603f01c04cc8ff24cd882a8ba34d51414d"
 dependencies = [
  "gpu-raw",
  "scarlet-os",
@@ -1952,21 +1760,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "sgfx-backend-wgpu"
+name = "sgfx-backend-scarlet-virgl-compat"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/sgfx#fbc0cf2267b1c37377cb07670ae6b70a1a0ab168"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=360523603f01c04cc8ff24cd882a8ba34d51414d#360523603f01c04cc8ff24cd882a8ba34d51414d"
 dependencies = [
- "bytemuck",
- "pollster",
- "raw-window-handle",
- "sgfx-core",
- "wgpu",
+ "sgfx-backend-scarlet-virgl",
 ]
 
 [[package]]
 name = "sgfx-codegen-adreno-a6xx"
 version = "0.1.0"
-source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git#fcff35b4b01ef71631f163d44302460abb3a4f00"
+source = "git+https://github.com/petitstrawberry/scarlet-project-chromebook.git?rev=ed98fe5c73d476cde26d057e677acbfaa4defd77#ed98fe5c73d476cde26d057e677acbfaa4defd77"
 dependencies = [
  "adreno-a6xx-layout",
  "adreno-a6xx-pm4",
@@ -1975,17 +1779,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "sgfx-codegen-maxwell"
+version = "0.1.0"
+source = "git+https://github.com/petitstrawberry/scarlet-project-switch?rev=5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9#5a3516bebcd2cafd1e37acc4f0d2f8a8561f79c9"
+dependencies = [
+ "maxwell-shader-pack",
+ "maxwell-submit-wire",
+ "sgfx-core",
+]
+
+[[package]]
 name = "sgfx-codegen-virgl"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/sgfx#fbc0cf2267b1c37377cb07670ae6b70a1a0ab168"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=360523603f01c04cc8ff24cd882a8ba34d51414d#360523603f01c04cc8ff24cd882a8ba34d51414d"
 dependencies = [
+ "naga",
  "sgfx-core",
 ]
 
 [[package]]
 name = "sgfx-core"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/sgfx#fbc0cf2267b1c37377cb07670ae6b70a1a0ab168"
+source = "git+https://github.com/petitstrawberry/sgfx?rev=040dbb5cf42b75489504e1765183d37f6131f54c#040dbb5cf42b75489504e1765183d37f6131f54c"
+dependencies = [
+ "sgfx-backend-abi",
+]
 
 [[package]]
 name = "shlex"
@@ -2020,15 +1838,6 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
-
-[[package]]
-name = "slotmap"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
-dependencies = [
- "version_check",
-]
 
 [[package]]
 name = "smallvec"
@@ -2112,12 +1921,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "static_assertions"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2164,7 +1967,7 @@ dependencies = [
 [[package]]
 name = "sws-client"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 dependencies = [
  "scarlet-os",
  "sws-protocol",
@@ -2173,7 +1976,7 @@ dependencies = [
 [[package]]
 name = "sws-protocol"
 version = "1.0.0"
-source = "git+https://github.com/petitstrawberry/Scarlet?branch=dev#c0f334b76abeac27b5d02ad6ae07593498e7b8ae"
+source = "git+https://github.com/petitstrawberry/Scarlet?rev=b3d2a55740a3d2ca49daad0ec7baba233f706f7a#b3d2a55740a3d2ca49daad0ec7baba233f706f7a"
 
 [[package]]
 name = "syn"
@@ -2591,115 +2394,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wgpu"
-version = "24.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b0b3436f0729f6cdf2e6e9201f3d39dc95813fad61d826c1ed07918b4539353"
-dependencies = [
- "arrayvec",
- "bitflags 2.13.1",
- "cfg_aliases",
- "document-features",
- "js-sys",
- "log",
- "naga",
- "parking_lot",
- "profiling",
- "raw-window-handle",
- "smallvec",
- "static_assertions",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "wgpu-core",
- "wgpu-hal",
- "wgpu-types",
-]
-
-[[package]]
-name = "wgpu-core"
-version = "24.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f0aa306497a238d169b9dc70659105b4a096859a34894544ca81719242e1499"
-dependencies = [
- "arrayvec",
- "bit-vec",
- "bitflags 2.13.1",
- "cfg_aliases",
- "document-features",
- "indexmap",
- "log",
- "naga",
- "once_cell",
- "parking_lot",
- "profiling",
- "raw-window-handle",
- "rustc-hash",
- "smallvec",
- "thiserror 2.0.20",
- "wgpu-hal",
- "wgpu-types",
-]
-
-[[package]]
-name = "wgpu-hal"
-version = "24.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f112f464674ca69f3533248508ee30cb84c67cf06c25ff6800685f5e0294e259"
-dependencies = [
- "android_system_properties",
- "arrayvec",
- "ash",
- "bit-set",
- "bitflags 2.13.1",
- "block",
- "bytemuck",
- "cfg_aliases",
- "core-graphics-types",
- "glow",
- "glutin_wgl_sys",
- "gpu-alloc",
- "gpu-allocator",
- "gpu-descriptor",
- "js-sys",
- "khronos-egl",
- "libc",
- "libloading",
- "log",
- "metal",
- "naga",
- "ndk-sys 0.5.0+25.2.9519653",
- "objc",
- "once_cell",
- "ordered-float",
- "parking_lot",
- "profiling",
- "range-alloc",
- "raw-window-handle",
- "renderdoc-sys",
- "rustc-hash",
- "smallvec",
- "thiserror 2.0.20",
- "wasm-bindgen",
- "web-sys",
- "wgpu-types",
- "windows 0.58.0",
- "windows-core 0.58.0",
-]
-
-[[package]]
-name = "wgpu-types"
-version = "24.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50ac044c0e76c03a0378e7786ac505d010a873665e2d51383dcff8dd227dc69c"
-dependencies = [
- "bitflags 2.13.1",
- "js-sys",
- "log",
- "web-sys",
-]
-
-[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2710,22 +2404,12 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6"
-dependencies = [
- "windows-core 0.58.0",
- "windows-targets",
-]
-
-[[package]]
-name = "windows"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580"
 dependencies = [
  "windows-collections",
- "windows-core 0.62.2",
+ "windows-core",
  "windows-future",
  "windows-numerics",
 ]
@@ -2736,20 +2420,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610"
 dependencies = [
- "windows-core 0.62.2",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99"
-dependencies = [
- "windows-implement 0.58.0",
- "windows-interface 0.58.0",
- "windows-result 0.2.0",
- "windows-strings 0.1.0",
- "windows-targets",
+ "windows-core",
 ]
 
 [[package]]
@@ -2758,11 +2429,11 @@ version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
 dependencies = [
- "windows-implement 0.60.2",
- "windows-interface 0.59.3",
+ "windows-implement",
+ "windows-interface",
  "windows-link",
- "windows-result 0.4.1",
- "windows-strings 0.5.1",
+ "windows-result",
+ "windows-strings",
 ]
 
 [[package]]
@@ -2771,20 +2442,9 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb"
 dependencies = [
- "windows-core 0.62.2",
+ "windows-core",
  "windows-link",
  "windows-threading",
-]
-
-[[package]]
-name = "windows-implement"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bbd5b46c938e506ecbce286b6628a02171d56153ba733b6c741fc627ec9579b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -2792,17 +2452,6 @@ name = "windows-implement"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053c4c462dc91d3b1504c6fe5a726dd15e216ba718e84a0e46a88fbe5ded3515"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2832,17 +2481,8 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26"
 dependencies = [
- "windows-core 0.62.2",
+ "windows-core",
  "windows-link",
-]
-
-[[package]]
-name = "windows-result"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d1043d8214f791817bab27572aaa8af63732e11bf84aa21a45a78d6c317ae0e"
-dependencies = [
- "windows-targets",
 ]
 
 [[package]]
@@ -2852,16 +2492,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd9b125c486025df0eabcb585e62173c6c9eddcec5d117d3b6e8c30e2ee4d10"
-dependencies = [
- "windows-result 0.2.0",
- "windows-targets",
 ]
 
 [[package]]
@@ -3096,12 +2726,6 @@ name = "xkeysym"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
-
-[[package]]
-name = "xml-rs"
-version = "0.8.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"
