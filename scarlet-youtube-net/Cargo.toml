@@ -6,10 +6,10 @@ license = "MIT"
 
 [dependencies]
 scarlet-youtube = { workspace = true }
-scarlet-os = { git = "https://github.com/petitstrawberry/Scarlet", rev = "74b92fe8c43ba71467dd70083411c4574de01079", package = "scarlet-os" }
+scarlet-os = { git = "https://github.com/petitstrawberry/Scarlet", rev = "5d0fe3ac8c97289a28599bac22fca4ac26a5f9ca", package = "scarlet-os" }
 getrandom = { version = "0.2", features = ["custom"] }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [target.'cfg(target_os = "scarlet")'.dependencies]
-scarlet-sys = { git = "https://github.com/petitstrawberry/Scarlet", rev = "74b92fe8c43ba71467dd70083411c4574de01079", package = "scarlet-sys" }
+scarlet-sys = { git = "https://github.com/petitstrawberry/Scarlet", rev = "5d0fe3ac8c97289a28599bac22fca4ac26a5f9ca", package = "scarlet-sys" }
