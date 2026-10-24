@@ -11,8 +11,8 @@ members = [
 [workspace.dependencies]
 scarlet-youtube = { path = "scarlet-youtube" }
 scarlet-youtube-net = { path = "scarlet-youtube-net" }
-scarlet-ui = { git = "https://github.com/petitstrawberry/scarlet-ui", rev = "eede18df956fa4599027f783266c5879d1afe564", package = "scarlet-ui", default-features = false, features = ["std", "platform-sws"] }
-scarlet-ui-macros = { git = "https://github.com/petitstrawberry/scarlet-ui", rev = "eede18df956fa4599027f783266c5879d1afe564", package = "scarlet-ui-macros" }
+scarlet-ui = { git = "https://github.com/petitstrawberry/scarlet-ui", rev = "9c9067594f59e08b038b5dcc06b7f13c065cdba5", package = "scarlet-ui", default-features = false, features = ["std", "platform-sws"] }
+scarlet-ui-macros = { git = "https://github.com/petitstrawberry/scarlet-ui", rev = "9c9067594f59e08b038b5dcc06b7f13c065cdba5", package = "scarlet-ui-macros" }
 
 [patch.crates-io]
 ring = { path = "vendor/ring" }
